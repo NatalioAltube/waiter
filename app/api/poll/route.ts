@@ -4,7 +4,7 @@ import path from "path"
 
 // Actualizar la configuración para OpenAI con la nueva API key
 const OPENAI_API_KEY =
-  "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" // API key actualizada
+  "" // API key actualizada
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"

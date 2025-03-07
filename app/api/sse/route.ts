@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 
 // Configuración para OpenAI
 const OPENAI_API_KEY =
-  "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"
+  ""
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
