@@ -1,1215 +1,1303 @@
 "use client"
 
-import { useCallback, useRef, useState, useEffect } from "react"
-import { Card, CardContent } from "@/components/ui/card"
-import { Mic, Volume2, Settings, RefreshCw } from 'lucide-react'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-// Configuración de parámetros de audio y detección
-const MAX_RECORDING_DURATION = 20000 // 20 segundos para frases más largas
-const VOICE_DETECTION_THRESHOLD = 0.03 // Umbral de volumen para detección de voz
-const SILENCE_THRESHOLD_TIME = 700 // Tiempo de silencio antes de procesar el audio (ms)
-
-// Inicializar variables globales para el navegador
-if (typeof window !== "undefined") {
-  window.interruptionCounter = 0
-  window.isListeningForInterruption = false
-  window.audioContext = null
-  window.ambientNoiseLevel = 0.01 // Nivel de ruido ambiental inicial
-}
+import SimliAvatar from "@/components/SimliAvatar"
 
 export default function Home() {
-  // Estado para el idioma seleccionado
-  const [language, setLanguage] = useState<string>("es")
-
-  // Estado para la grabación
-  const [isRecording, setIsRecording] = useState<boolean>(false)
-  const [isListening, setIsListening] = useState<boolean>(true) // Comienza escuchando automáticamente
-  const [isProcessing, setIsProcessing] = useState<boolean>(false)
-  const [transcribedText, setTranscribedText] = useState<string>("")
-  const [responseText, setResponseText] = useState<string>("")
-  const [clientId] = useState<string>(() => `client_${Date.now()}`)
-  const [lastTimestamp, setLastTimestamp] = useState<number>(0)
-  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isServerConnected, setIsServerConnected] = useState<boolean>(false)
-  const [currentResponseId, setCurrentResponseId] = useState<string | null>(null)
-  const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([])
-  const [audioLevel, setAudioLevel] = useState<number>(0)
-  const [needsRestart, setNeedsRestart] = useState<boolean>(false)
-  const [showSettings, setShowSettings] = useState<boolean>(false)
-  const [sensitivityLevel, setSensitivityLevel] = useState<number>(5) // 1-10, donde 10 es más sensible
-
-  // Referencias
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const audioElementRef = useRef<HTMLAudioElement | null>(null)
-  const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const lastTranscribedTextRef = useRef<string>("")
-  const silenceCounterRef = useRef<number>(0)
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const microphoneStreamRef = useRef<MediaStream | null>(null)
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const lastVoiceActivityRef = useRef<number>(Date.now())
-  const processingQueueRef = useRef<boolean>(false)
-  const restartTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const ambientNoiseLevelRef = useRef<number>(0.01)
-  const calibrationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-  // Referencias para funciones para evitar dependencias circulares
-  const startRecordingRef = useRef<() => Promise<void>>(async () => {})
-  const stopRecordingRef = useRef<() => void>(() => {})
-
-  // Función para calibrar el nivel de ruido ambiental
-  const calibrateAmbientNoise = useCallback(() => {
-    if (!analyserRef.current) return;
-    
-    console.log("Calibrando nivel de ruido ambiental...");
-    
-    let samples = 0;
-    let totalLevel = 0;
-    
-    const sampleNoise = () => {
-      if (!analyserRef.current) return;
-      
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteFrequencyData(dataArray);
-      
-      const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
-      const normalizedValue = average / 255;
-      
-      totalLevel += normalizedValue;
-      samples++;
-      
-      if (samples < 20) {
-        // Tomar 20 muestras durante 2 segundos
-        setTimeout(sampleNoise, 100);
-      } else {
-        // Calcular el promedio y establecer como nivel de ruido ambiental
-        const avgLevel = totalLevel / samples;
-        ambientNoiseLevelRef.current = avgLevel * 0.7; // Usar 70% del nivel promedio como base
-        
-        if (typeof window !== "undefined") {
-          window.ambientNoiseLevel = ambientNoiseLevelRef.current;
-        }
-        
-        console.log(`Nivel de ruido ambiental calibrado: ${ambientNoiseLevelRef.current.toFixed(4)}`);
-      }
-    };
-    
-    sampleNoise();
-  }, []);
-
-  // Función para limpiar todos los recursos de audio
-  const cleanupAudioResources = useCallback(() => {
-    console.log("Limpiando recursos de audio...")
-
-    // Detener grabación si está activa
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current = null
-    }
-
-    // Detener reproducción de audio si está activa
-    if (audioElementRef.current) {
-      audioElementRef.current.pause()
-      audioElementRef.current.src = ""
-      audioElementRef.current = null
-    }
-
-    // Detener stream de micrófono
-    if (microphoneStreamRef.current) {
-      microphoneStreamRef.current.getTracks().forEach((track) => {
-        track.stop()
-      })
-      microphoneStreamRef.current = null
-    }
-
-    // Limpiar timeouts
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current)
-      recordingTimeoutRef.current = null
-    }
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-
-    if (restartTimerRef.current) {
-      clearTimeout(restartTimerRef.current)
-      restartTimerRef.current = null
-    }
-
-    if (calibrationTimeoutRef.current) {
-      clearTimeout(calibrationTimeoutRef.current)
-      calibrationTimeoutRef.current = null
-    }
-
-    // Resetear estados
-    processingQueueRef.current = false
-    audioChunksRef.current = []
-
-    console.log("Recursos de audio limpiados correctamente")
-  }, [])
-
-  // Función para hacer ping al servidor
-  const pingServer = useCallback(async () => {
-    try {
-      console.log("Intentando hacer ping al servidor...")
-
-      // Usar fetch con un timeout para evitar esperas infinitas
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-      const response = await fetch("/api/poll", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          clientId,
-          action: "ping",
-        }),
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
-
-      if (!response.ok) {
-        console.error(`Error de conexión: ${response.status}`)
-        setIsServerConnected(false)
-        setError(`Error de conexión: ${response.status}`)
-        return false
-      }
-
-      const data = await response.json()
-
-      if (data.success) {
-        console.log("Ping exitoso al servidor")
-        setIsServerConnected(true)
-        setError(null)
-        return true
-      } else {
-        console.error("Error en la respuesta del servidor:", data)
-        setIsServerConnected(false)
-        setError("Error en la respuesta del servidor")
-        return false
-      }
-    } catch (error) {
-      console.error("Error al hacer ping al servidor:", error)
-      setIsServerConnected(false)
-      setError(error instanceof Error ? error.message : "Error de conexión")
-      return false
-    }
-  }, [clientId])
-
-  // Función para interrumpir la respuesta actual
-  const interruptResponse = useCallback(async () => {
-    console.log("=== INICIANDO INTERRUPCIÓN DE RESPUESTA ===")
-
-    if (isPlayingAudio && audioElementRef.current) {
-      audioElementRef.current.pause()
-      setIsPlayingAudio(false)
-    }
-
-    // Limpiar recursos de audio
-    cleanupAudioResources()
-
-    try {
-      await fetch("/api/poll", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          clientId,
-          action: "interrupt",
-        }),
-      })
-
-      // Resetear el estado
-      await fetch("/api/poll", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          clientId,
-          action: "reset_state",
-        }),
-      })
-
-      setIsProcessing(false)
-      setCurrentResponseId(null)
-
-      // Forzar reinicio de grabación con menor delay
-      setNeedsRestart(true)
-
-      // Reinicio inmediato
-      setTimeout(() => {
-        if (startRecordingRef.current) {
-          startRecordingRef.current()
-        }
-      }, 200) // Más rápido para mejor fluidez
-
-      console.log("=== INTERRUPCIÓN COMPLETADA, REINICIANDO GRABACIÓN ===")
-    } catch (error) {
-      console.error("Error al interrumpir respuesta:", error)
-      setIsProcessing(false)
-      setCurrentResponseId(null)
-
-      // Forzar reinicio de grabación incluso si hay error
-      setNeedsRestart(true)
-
-      // Reinicio inmediato
-      setTimeout(() => {
-        if (startRecordingRef.current) {
-          startRecordingRef.current()
-        }
-      }, 200)
-    }
-  }, [clientId, isPlayingAudio, cleanupAudioResources])
-
-  // Función para reproducir respuesta de audio
-  const playAudioResponse = useCallback(
-    (audioBase64: string) => {
-      try {
-        console.log("=== INICIANDO REPRODUCCIÓN DE AUDIO ===")
-
-        // Crear un nuevo elemento de audio para cada respuesta
-        const audioElement = new Audio()
-
-        // Establecer estado de carga
-        setIsPlayingAudio(true)
-
-        audioElement.oncanplaythrough = () => {
-          console.log("Audio listo para reproducir")
-        }
-
-        audioElement.onplay = () => {
-          setIsPlayingAudio(true)
-          console.log("Audio comenzó a reproducirse")
-
-          // Iniciar escucha activa para interrupciones mientras se reproduce el audio
-          if (typeof window !== "undefined") {
-            window.isListeningForInterruption = true
-            window.interruptionCounter = 0 // Resetear contador al iniciar
-          }
-        }
-
-        // Optimizar los tiempos de espera y transiciones
-        audioElement.onended = () => {
-          console.log("=== AUDIO TERMINADO, REINICIANDO GRABACIÓN ===")
-          setIsPlayingAudio(false)
-          if (typeof window !== "undefined") {
-            window.isListeningForInterruption = false
-          }
-
-          // Limpiar referencia
-          if (audioElementRef.current === audioElement) {
-            audioElementRef.current = null
-          }
-
-          // Resetear estados relevantes
-          setIsProcessing(false)
-          setCurrentResponseId(null)
-          processingQueueRef.current = false
-
-          // Iniciar grabación más rápido después de terminar el audio
-          setTimeout(() => {
-            console.log("Reiniciando grabación después de audio terminado")
-            if (startRecordingRef.current) {
-              startRecordingRef.current()
-            }
-          }, 200) // Reducido para mejor fluidez
-        }
-
-        audioElement.onerror = (e) => {
-          console.error("Error al cargar audio:", e)
-          setError("Error al reproducir audio")
-          setIsPlayingAudio(false)
-          if (typeof window !== "undefined") {
-            window.isListeningForInterruption = false
-          }
-
-          // Forzar reinicio de grabación
-          setNeedsRestart(true)
-        }
-
-        // Añadir botón físico para interrupciones (tecla Escape)
-        const handleKeyDown = (e: KeyboardEvent) => {
-          if (e.key === "Escape" || e.key === " ") {
-            console.log("Interrupción manual detectada (tecla Escape o Espacio)")
-            audioElement.pause()
-            setIsPlayingAudio(false)
-            if (typeof window !== "undefined") {
-              window.isListeningForInterruption = false
-            }
-            interruptResponse()
-          }
-        }
-
-        document.addEventListener("keydown", handleKeyDown)
-
-        // Convertir base64 a blob
-        const byteCharacters = atob(audioBase64)
-        const byteNumbers = new Array(byteCharacters.length)
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i)
-        }
-        const byteArray = new Uint8Array(byteNumbers)
-        const blob = new Blob([byteArray], { type: "audio/mp3" })
-
-        // Crear URL para el blob
-        const audioUrl = URL.createObjectURL(blob)
-        audioElement.src = audioUrl
-
-        // Guardar referencia y reproducir
-        audioElementRef.current = audioElement
-
-        // Pequeño delay antes de reproducir
-        setTimeout(() => {
-          audioElement.play().catch((error) => {
-            console.error("Error al reproducir audio:", error)
-            setError("Error al reproducir audio: " + error.message)
-            if (typeof window !== "undefined") {
-              window.isListeningForInterruption = false
-            }
-
-            // Forzar reinicio de grabación
-            setNeedsRestart(true)
-          })
-        }, 100) // Reducido para mejor fluidez
-
-        // Limpiar el event listener cuando se desmonte
-        return () => {
-          document.removeEventListener("keydown", handleKeyDown)
-        }
-      } catch (error) {
-        console.error("Error al procesar audio:", error)
-        setError("Error al procesar audio: " + (error instanceof Error ? error.message : String(error)))
-        if (typeof window !== "undefined") {
-          window.isListeningForInterruption = false
-        }
-
-        // Forzar reinicio de grabación
-        setNeedsRestart(true)
-      }
-    },
-    [interruptResponse],
-  )
-
-  // Función para procesar mensajes del servidor
-  const processMessages = useCallback(
-    (messages: any[]) => {
-      console.log("[processMessages] Procesando mensajes:", messages.length)
-
-      for (const message of messages) {
-        console.log("[processMessages] Procesando mensaje:", message.event)
-
-        switch (message.event) {
-          case "connected":
-            console.log("[processMessages] Conexión establecida:", message.data)
-            setIsServerConnected(true)
-
-            // Iniciar grabación automáticamente al conectar
-            setNeedsRestart(true)
-            break
-
-          case "transcription":
-            console.log("[processMessages] Transcripción recibida:", message.data.text)
-            if (message.data.text && message.data.text.trim().length > 0) {
-              setTranscribedText(message.data.text)
-              setConversationHistory((prev) => [...prev, { role: "user", content: message.data.text }])
-              lastTranscribedTextRef.current = message.data.text
-            }
-            break
-
-          case "response_chunk":
-            console.log("[processMessages] Chunk de respuesta recibido:", message.data)
-            if (message.data.responseId === currentResponseId || !currentResponseId) {
-              setResponseText((prev) => {
-                if (message.data.isComplete) {
-                  setConversationHistory((prev) => [...prev, { role: "assistant", content: message.data.text }])
-                  return message.data.text
-                }
-                return prev + message.data.text
-              })
-            }
-            break
-
-          case "audio_response":
-            console.log("[processMessages] Respuesta de audio recibida")
-            if (message.data.responseId === currentResponseId || !currentResponseId) {
-              console.log("[processMessages] Reproduciendo audio")
-              playAudioResponse(message.data.audio)
-            }
-            break
-
-          case "error":
-            console.error("[processMessages] Error del servidor:", message.data)
-            setError(message.data.message)
-            setIsProcessing(false)
-
-            // Reintentar grabación después de un error
-            setNeedsRestart(true)
-            break
-
-          case "interrupted":
-            console.log("Respuesta interrumpida")
-            setIsProcessing(false)
-
-            // Detener cualquier reproducción de audio
-            if (isPlayingAudio && audioElementRef.current) {
-              audioElementRef.current.pause()
-              setIsPlayingAudio(false)
-            }
-
-            // Reiniciar grabación después de interrupción
-            setNeedsRestart(true)
-            break
-
-          case "wake_word_detected":
-            console.log("Palabra clave detectada:", message.data.text)
-
-            // Si estamos reproduciendo audio, detenerlo
-            if (isPlayingAudio && audioElementRef.current) {
-              audioElementRef.current.pause()
-              setIsPlayingAudio(false)
-            }
-
-            // Interrumpir la respuesta actual
-            interruptResponse()
-            break
-
-          case "state_reset":
-            console.log("Estado reseteado:", message.data)
-            setIsProcessing(false)
-            setCurrentResponseId(null)
-
-            // Reiniciar grabación después de reset
-            setNeedsRestart(true)
-            break
-            
-          case "sentiment_analysis":
-            console.log("Análisis de sentimiento recibido:", message.data)
-            // Aquí podrías implementar lógica para manejar el sentimiento detectado
-            break
-        }
-      }
-    },
-    [currentResponseId, isPlayingAudio, playAudioResponse, interruptResponse],
-  )
-
-  // Función para realizar el polling al servidor
-  const startPolling = useCallback(() => {
-    console.log("[startPolling] Iniciando polling")
-
-    const intervalId = setInterval(async () => {
-      try {
-        console.log("[startPolling] Realizando solicitud de polling")
-        const response = await fetch(`/api/poll?clientId=${clientId}&lastTimestamp=${lastTimestamp}`)
-
-        if (!response.ok) {
-          throw new Error(`Error en la respuesta: ${response.status}`)
-        }
-
-        const messages = await response.json()
-        console.log("[startPolling] Mensajes recibidos:", messages.length)
-
-        if (!Array.isArray(messages)) {
-          console.warn("[startPolling] Respuesta del servidor no es un array:", messages)
-          return
-        }
-
-        if (messages.length > 0) {
-          processMessages(messages)
-          const latestTimestamp = Math.max(...messages.map((msg) => msg.timestamp))
-          setLastTimestamp(latestTimestamp)
-        }
-
-        setIsServerConnected(true)
-        setError(null)
-      } catch (error) {
-        console.error("[startPolling] Error:", error)
-        setIsServerConnected(false)
-        setError(error instanceof Error ? error.message : "Error de conexión")
-
-        setTimeout(() => {
-          if (!isServerConnected) {
-            pingServer()
-          }
-        }, 5000)
-      }
-    }, 1000)
-
-    pollingIntervalRef.current = intervalId
-
-    return () => clearInterval(intervalId)
-  }, [clientId, lastTimestamp, isServerConnected, processMessages, pingServer])
-
-  // Función para analizar el audio y detectar interrupciones
-  const analyzeAudio = useCallback(() => {
-    if (!analyserRef.current) return
-
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-    analyserRef.current.getByteFrequencyData(dataArray)
-
-    // Calcular el nivel de audio promedio
-    const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
-    const normalizedValue = average / 255 // Normalizar a un valor entre 0 y 1
-
-    setAudioLevel(normalizedValue)
-
-    // Ajustar el umbral de detección según el nivel de sensibilidad configurado
-    const adjustedThreshold = VOICE_DETECTION_THRESHOLD * (11 - sensitivityLevel) / 5;
-    
-    // Usar el nivel de ruido ambiental para ajustar el umbral
-    const dynamicThreshold = Math.max(adjustedThreshold, ambientNoiseLevelRef.current * 1.5);
-
-    // Detectar actividad de voz
-    if (normalizedValue > dynamicThreshold) {
-      // Hay actividad de voz
-      lastVoiceActivityRef.current = Date.now()
-
-      // Si estamos reproduciendo audio y hay actividad de voz fuerte (posible interrupción)
-      if (
-        isPlayingAudio &&
-        audioElementRef.current &&
-        typeof window !== "undefined" &&
-        window.isListeningForInterruption
-      ) {
-        // Usar un umbral adaptativo basado en el nivel de audio ambiente y sensibilidad
-        const interruptionBaseThreshold = dynamicThreshold * 2.0 * (11 - sensitivityLevel) / 5;
-        const adaptiveThreshold = Math.max(interruptionBaseThreshold, normalizedValue * 0.7);
-        
-        if (normalizedValue > adaptiveThreshold) {
-          console.log(
-            `Posible interrupción detectada durante reproducción, nivel: ${normalizedValue.toFixed(2)}, umbral: ${adaptiveThreshold.toFixed(2)}`,
-          )
-
-          // Contar cuántas muestras consecutivas tienen nivel alto
-          if (typeof window !== "undefined") {
-            if (!window.interruptionCounter) window.interruptionCounter = 0
-            window.interruptionCounter++
-
-            // Incrementar el contador más rápido si el nivel es muy alto
-            if (normalizedValue > adaptiveThreshold * 1.5) {
-              window.interruptionCounter++
-            }
-          }
-
-          // Requerir más muestras consecutivas para interrupción pero con umbral dinámico
-          // Ajustar según el nivel de sensibilidad (3-1 muestras)
-          const requiredSamples = Math.max(1, 4 - Math.floor(sensitivityLevel / 3));
-          
-          if (typeof window !== "undefined" && window.interruptionCounter > requiredSamples) {
-            console.log("Interrupción confirmada por nivel de audio, deteniendo audio")
-            window.interruptionCounter = 0
-            window.isListeningForInterruption = false
-            audioElementRef.current.pause()
-            setIsPlayingAudio(false)
-            interruptResponse()
-          }
-        } else {
-          // Reducir el contador gradualmente si el nivel baja
-          if (typeof window !== "undefined" && window.interruptionCounter > 0) {
-            window.interruptionCounter -= 0.5 // Reducción más gradual
-          }
-        }
-      } else {
-        // Resetear contador si no estamos reproduciendo o el nivel no es suficiente
-        if (typeof window !== "undefined" && window.interruptionCounter) {
-          window.interruptionCounter = 0
-        }
-      }
-    } else {
-      // Limpiar el temporizador de silencio si existe
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current)
-        silenceTimerRef.current = null
-      }
-
-      if (isRecording && !silenceTimerRef.current) {
-        // No hay actividad de voz y estamos grabando
-        // Iniciar temporizador para detener la grabación después de un período de silencio
-        silenceTimerRef.current = setTimeout(() => {
-          if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-            console.log("Silencio detectado, deteniendo grabación")
-            stopRecordingRef.current()
-          }
-          silenceTimerRef.current = null
-        }, SILENCE_THRESHOLD_TIME)
-
-        // Resetear contador de interrupción
-        if (typeof window !== "undefined" && window.interruptionCounter) {
-          window.interruptionCounter = 0
-        }
-      }
-    }
-
-    // Continuar analizando
-    requestAnimationFrame(analyzeAudio)
-  }, [isRecording, isPlayingAudio, interruptResponse, sensitivityLevel])
-
-  // Función para detener la grabación
-  const stopRecording = useCallback(() => {
-    console.log("Deteniendo grabación...")
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop()
-    }
-
-    if (recordingTimeoutRef.current) {
-      clearTimeout(recordingTimeoutRef.current)
-      recordingTimeoutRef.current = null
-    }
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
-    }
-
-    setIsRecording(false)
-  }, [])
-
-  // Asignar la función stopRecording a la referencia
-  useEffect(() => {
-    stopRecordingRef.current = stopRecording
-  }, [stopRecording])
-
-  // Función para iniciar la grabación
-  const startRecording = useCallback(async () => {
-    // Verificar si ya estamos grabando o procesando
-    if (isRecording || isProcessing || isPlayingAudio) {
-      console.log("No se puede iniciar grabación: ya hay una grabación o procesamiento en curso")
-      return
-    }
-
-    // Asegurar reseteo
-    processingQueueRef.current = false
-
-    try {
-      console.log("=== INICIANDO GRABACIÓN ===")
-      processingQueueRef.current = true
-
-      // Limpiar recursos previos
-      cleanupAudioResources()
-
-      // Resetear el estado
-      setError(null)
-      audioChunksRef.current = []
-
-      // Solicitar permisos de micrófono
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-      microphoneStreamRef.current = stream
-
-      // Configurar análisis de audio
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-        if (typeof window !== "undefined") {
-          window.audioContext = audioContextRef.current
-        }
-      }
-
-      if (!analyserRef.current) {
-        analyserRef.current = audioContextRef.current.createAnalyser()
-        analyserRef.current.fftSize = 256
-      }
-
-      const source = audioContextRef.current.createMediaStreamSource(stream)
-      source.connect(analyserRef.current)
-
-      // Calibrar el nivel de ruido ambiental después de un breve período
-      if (calibrationTimeoutRef.current) {
-        clearTimeout(calibrationTimeoutRef.current)
-      }
-      
-      calibrationTimeoutRef.current = setTimeout(() => {
-        calibrateAmbientNoise()
-      }, 1000)
-
-      // Iniciar análisis de audio
-      analyzeAudio()
-
-      // Crear el MediaRecorder con manejo de errores mejorado
-      const options: any = {}
-
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        options.mimeType = "audio/webm;codecs=opus"
-      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-        options.mimeType = "audio/webm"
-      }
-
-      const mediaRecorder = new MediaRecorder(stream, options)
-      mediaRecorderRef.current = mediaRecorder
-
-      // Configurar eventos
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
-      }
-
-      mediaRecorder.onerror = (event) => {
-        console.error("Error en MediaRecorder:", event)
-        setError("Error en la grabación: " + (event.error ? event.error.message : "Error desconocido"))
-        processingQueueRef.current = false
-        setIsRecording(false)
-
-        // Reintentar después de un error
-        setNeedsRestart(true)
-      }
-
-      mediaRecorder.onstop = async () => {
-        console.log("Grabación detenida, procesando audio...")
-
-        // Si no hay chunks, reiniciar grabación
-        if (audioChunksRef.current.length === 0) {
-          console.log("No hay datos de audio, reiniciando grabación")
-          setIsRecording(false)
-          processingQueueRef.current = false
-          setNeedsRestart(true)
-          return
-        }
-
-        try {
-          // Crear blob de audio
-          const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
-
-          // Si el blob es muy pequeño, probablemente sea ruido
-          if (audioBlob.size < 1000) {
-            console.log(`Audio demasiado pequeño (${audioBlob.size} bytes), probablemente ruido`)
-            setIsRecording(false)
-            processingQueueRef.current = false
-            setNeedsRestart(true)
-            return
-          }
-
-          // Convertir blob a base64
-          const reader = new FileReader()
-          reader.readAsDataURL(audioBlob)
-          reader.onloadend = async () => {
-            const base64Data = reader.result?.toString() || ""
-            const base64Audio = base64Data.split(",")[1] // Extraer solo la parte base64
-
-            if (base64Audio) {
-              setIsProcessing(true)
-
-              try {
-                // Enviar audio al servidor
-                const response = await fetch("/api/poll", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    clientId,
-                    action: "transcribe",
-                    language,
-                    data: {
-                      audio: base64Audio,
-                      lastText: lastTranscribedTextRef.current,
-                      conversationHistory: conversationHistory,
-                    },
-                  }),
-                })
-
-                if (!response.ok) {
-                  throw new Error(`Error en la solicitud: ${response.status}`)
-                }
-
-                const data = await response.json()
-
-                if (data.success) {
-                  if (!data.ignored && data.transcribedText) {
-                    lastTranscribedTextRef.current = data.transcribedText
-                    setCurrentResponseId(data.responseId || null)
-                  } else if (data.ignored) {
-                    // Si la transcripción fue ignorada, reanudar la escucha
-                    setIsProcessing(false)
-                    processingQueueRef.current = false
-                    setNeedsRestart(true)
-                  }
-                } else {
-                  console.warn("Transcripción ignorada:", data.reason)
-                  setIsProcessing(false)
-                  processingQueueRef.current = false
-                  setNeedsRestart(true)
-                }
-              } catch (error) {
-                console.error("Error al enviar audio:", error)
-                setError("Error al enviar audio: " + (error instanceof Error ? error.message : String(error)))
-                setIsProcessing(false)
-                processingQueueRef.current = false
-                setNeedsRestart(true)
-              }
-            } else {
-              processingQueueRef.current = false
-              setNeedsRestart(true)
-            }
-          }
-        } catch (error) {
-          console.error("Error al procesar audio:", error)
-          setError("Error al procesar audio: " + (error instanceof Error ? error.message : String(error)))
-          setIsRecording(false)
-          setIsProcessing(false)
-          processingQueueRef.current = false
-          setNeedsRestart(true)
-        }
-      }
-
-      // Iniciar grabación
-      mediaRecorder.start()
-      setIsRecording(true)
-      processingQueueRef.current = false
-      console.log("Grabación iniciada correctamente")
-
-      // Configurar timeout para detener la grabación después de MAX_RECORDING_DURATION
-      if (recordingTimeoutRef.current) {
-        clearTimeout(recordingTimeoutRef.current)
-      }
-
-      // Aumentar el tiempo máximo de grabación para frases más largas
-      recordingTimeoutRef.current = setTimeout(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-          console.log("Tiempo máximo de grabación alcanzado, deteniendo grabación")
-          stopRecordingRef.current()
-        }
-      }, MAX_RECORDING_DURATION)
-    } catch (error) {
-      console.error("Error al iniciar grabación:", error)
-      setError("Error al iniciar grabación: " + (error instanceof Error ? error.message : String(error)))
-      setIsRecording(false)
-      processingQueueRef.current = false
-
-      // Reintentar después de un error
-      setNeedsRestart(true)
-    }
-  }, [
-    clientId,
-    language,
-    conversationHistory,
-    isRecording,
-    isProcessing,
-    isPlayingAudio,
-    analyzeAudio,
-    cleanupAudioResources,
-    calibrateAmbientNoise,
-  ])
-
-  // Asignar la función startRecording a la referencia
-  useEffect(() => {
-    startRecordingRef.current = startRecording
-  }, [startRecording])
-
-  // Efecto para iniciar el polling al cargar la página
-  useEffect(() => {
-    const cleanup = startPolling()
-
-    // Limpiar al desmontar
-    return cleanup
-  }, [startPolling])
-
-  // Efecto para hacer ping al servidor
-  useEffect(() => {
-    // Hacer ping inicial con reintento
-    const doPing = async () => {
-      try {
-        const success = await pingServer()
-        if (!success) {
-          console.log("Ping fallido, reintentando en 3 segundos...")
-          setTimeout(doPing, 3000)
-        } else {
-          console.log("Conexión establecida con el servidor")
-        }
-      } catch (error) {
-        console.error("Error en ping inicial, reintentando en 3 segundos:", error)
-        setTimeout(doPing, 3000)
-      }
-    }
-
-    doPing()
-
-    // Configurar intervalo de ping con manejo de errores
-    pingIntervalRef.current = setInterval(() => {
-      pingServer().catch((error) => {
-        console.error("Error en ping periódico:", error)
-      })
-    }, 30000)
-
-    return () => {
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current)
-      }
-    }
-  }, [pingServer])
-
-  // Efecto para limpiar recursos al desmontar
-  useEffect(() => {
-    return () => {
-      cleanupAudioResources()
-    }
-  }, [cleanupAudioResources])
-
-  // Efecto para reiniciar la grabación cuando sea necesario
-  useEffect(() => {
-    if (needsRestart) {
-      console.log("Reiniciando grabación por needsRestart flag...")
-
-      // Limpiar cualquier timer de reinicio existente
-      if (restartTimerRef.current) {
-        clearTimeout(restartTimerRef.current)
-      }
-
-      // Usar un timeout más corto para asegurar que todos los estados se actualicen
-      restartTimerRef.current = setTimeout(() => {
-        if (!isRecording && !isProcessing && !isPlayingAudio) {
-          console.log("Ejecutando reinicio de grabación...")
-          setNeedsRestart(false)
-          startRecordingRef.current()
-        } else {
-          console.log("No se puede reiniciar grabación, estados actuales:", {
-            isRecording,
-            isProcessing,
-            isPlayingAudio,
-          })
-
-          // Si hay un bloqueo, forzar limpieza y reintentar
-          if (isRecording || isProcessing || isPlayingAudio) {
-            console.log("Forzando limpieza de recursos y reinicio...")
-            cleanupAudioResources()
-            processingQueueRef.current = false
-            setIsRecording(false)
-            setIsProcessing(false)
-            setIsPlayingAudio(false)
-
-            // Reintentar después de la limpieza forzada con menor delay
-            setTimeout(() => {
-              setNeedsRestart(false)
-              startRecordingRef.current()
-            }, 200) // Reducido para mejor fluidez
-          }
-        }
-      }, 500) // Reducido para mejor fluidez
-
-      return () => {
-        if (restartTimerRef.current) {
-          clearTimeout(restartTimerRef.current)
-        }
-      }
-    }
-  }, [needsRestart, isRecording, isProcessing, isPlayingAudio, cleanupAudioResources])
-
-  // Mecanismo de recuperación menos agresivo
-  useEffect(() => {
-    const recoveryInterval = setInterval(() => {
-      // Verificar si el sistema podría estar atascado
-      const currentTime = Date.now()
-      const timeSinceLastActivity = currentTime - lastVoiceActivityRef.current
-
-      if (!isRecording && !isProcessing && !isPlayingAudio && timeSinceLastActivity > 4000) {
-        console.log("Sistema posiblemente atascado, reiniciando grabación...")
-        processingQueueRef.current = false
-
-        if (startRecordingRef.current) {
-          startRecordingRef.current()
-        }
-      }
-    }, 3000) // Verificar con menos frecuencia
-
-    return () => clearInterval(recoveryInterval)
-  }, [isRecording, isProcessing, isPlayingAudio])
-
-  // Añadir un botón físico para interrupciones
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === "Escape" || e.key === " ") && isPlayingAudio) {
-        console.log("Interrupción manual global detectada (tecla Escape o Espacio)")
-        interruptResponse()
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown)
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown)
-    }
-  }, [isPlayingAudio, interruptResponse])
-
-  // Renderizar la interfaz de usuario
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gray-100">
-      <Card className="w-full max-w-md">
-        <CardContent className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold">Asistente de Voz</h1>
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full mr-2 ${isServerConnected ? "bg-green-500" : "bg-red-500"}`}></div>
-              <span className="text-sm text-gray-500">{isServerConnected ? "Conectado" : "Desconectado"}</span>
-              <button 
-                onClick={() => setShowSettings(!showSettings)} 
-                className="p-1 rounded-full hover:bg-gray-200 transition-colors"
-              >
-                <Settings className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-          </div>
-
-          {showSettings && (
-            <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-sm font-medium mb-2">Configuración</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-sm text-gray-700 block mb-1">Idioma</label>
-                  <Select value={language} onValueChange={setLanguage}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona un idioma" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="es">Español</SelectItem>
-                      <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="fr">Français</SelectItem>
-                      <SelectItem value="it">Italiano</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-700 block mb-1">
-                    Sensibilidad de detección de voz: {sensitivityLevel}
-                  </label>
-                  <input 
-                    type="range" 
-                    min="1" 
-                    max="10" 
-                    value={sensitivityLevel} 
-                    onChange={(e) => setSensitivityLevel(parseInt(e.target.value))}
-                    className="w-full"
-                  />
-                  <div className="flex justify-between text-xs text-gray-500">
-                    <span>Baja</span>
-                    <span>Alta</span>
-                  </div>
-                </div>
-                <div>
-                  <button 
-                    onClick={calibrateAmbientNoise}
-                    className="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded transition-colors flex items-center justify-center gap-2"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                    Calibrar ruido ambiental
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!showSettings && (
-            <div className="mb-4">
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un idioma" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="es">Español</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="fr">Français</SelectItem>
-                  <SelectItem value="it">Italiano</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div className="p-4 bg-gray-50 rounded-lg min-h-[100px] max-h-[200px] overflow-y-auto">
-              <p className="text-gray-700">{transcribedText || "Habla para ver la transcripción aquí..."}</p>
-            </div>
-
-            <div className="p-4 bg-blue-50 rounded-lg min-h-[100px] max-h-[200px] overflow-y-auto">
-              <p className="text-blue-700">{responseText || "La respuesta aparecerá aquí..."}</p>
-            </div>
-
-            {error && (
-              <div className="p-4 bg-red-50 rounded-lg">
-                <p className="text-red-700">{error}</p>
-              </div>
-            )}
-
-            {/* Indicador de nivel de audio */}
-            <div className="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                className="bg-blue-600 h-2.5 rounded-full transition-all duration-100"
-                style={{ width: `${Math.min(audioLevel * 100, 100)}%` }}
-              ></div>
-            </div>
-
-            <div className="p-4 bg-green-50 rounded-lg text-center">
-              <p className="text-green-700 font-medium">
-                {isRecording ? (
-                  <span className="flex items-center justify-center">
-                    <Mic className="mr-2 h-5 w-5 animate-pulse text-red-500" /> Escuchando...
-                  </span>
-                ) : isProcessing ? (
-                  "Procesando..."
-                ) : isPlayingAudio ? (
-                  <span className="flex items-center justify-center">
-                    <Volume2 className="mr-2 h-5 w-5 animate-pulse" /> Reproduciendo respuesta...
-                  </span>
-                ) : (
-                  "Iniciando escucha..."
-                )}
-              </p>
-              <p className="text-xs text-gray-500 mt-2">
-                Di "oye", "disculpa" o "para" para interrumpir la respuesta actual
-              </p>
-            </div>
-
-            {/* Botón de interrupción manual */}
-            {isPlayingAudio && (
-              <button
-                onClick={interruptResponse}
-                className="w-full py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded transition-colors"
-              >
-                Interrumpir respuesta
-              </button>
-            )}
-
-            {/* Botón para forzar reinicio de grabación */}
-            {!isRecording && !isPlayingAudio && (
-              <button
-                onClick={() => setNeedsRestart(true)}
-                className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded transition-colors"
-              >
-                Reiniciar grabación
-              </button>
-            )}
-          </div>
-
-          <div className="mt-6">
-            <h3 className="text-sm font-medium mb-2">Historial de conversación:</h3>
-            <div className="bg-white rounded-lg p-3 max-h-[200px] overflow-y-auto text-xs">
-              {conversationHistory.length === 0 ? (
-                <p className="text-gray-500">No hay historial de conversación</p>
-              ) : (
-                conversationHistory.map((msg, index) => (
-                  <div key={index} className={`mb-2 ${msg.role === "user" ? "text-blue-600" : "text-green-600"}`}>
-                    <span className="font-bold">{msg.role === "user" ? "Tú: " : "Asistente: "}</span>
-                    {msg.content}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+    <main className="w-full h-screen bg-white">
+      <SimliAvatar />
     </main>
   )
 }
+
+// "use client"
+
+// import { useCallback, useRef, useState, useEffect } from "react"
+// import { Card, CardContent } from "@/components/ui/card"
+// import { Mic, Volume2, Settings, RefreshCw } from "lucide-react"
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// import Avatar3D from "@/components/SimliAvatar"
+// import FallbackAvatar from "@/components/FallbackAvatar"
+// import { ErrorBoundary } from "@/components/ErrorBoundary"
+
+// // Configuración de parámetros de audio y detección
+// const MAX_RECORDING_DURATION = 20000 // 20 segundos para frases más largas
+// const VOICE_DETECTION_THRESHOLD = 0.03 // Umbral de volumen para detección de voz
+// const SILENCE_THRESHOLD_TIME = 700 // Tiempo de silencio antes de procesar el audio (ms)
+
+// // Inicializar variables globales para el navegador
+// if (typeof window !== "undefined") {
+//   window.interruptionCounter = 0
+//   window.isListeningForInterruption = false
+//   window.audioContext = null
+//   window.ambientNoiseLevel = 0.01 // Nivel de ruido ambiental inicial
+// }
+
+// export default function Home() {
+//   // Cerca del inicio del componente Home, añade este log
+//   useEffect(() => {
+//     console.log("NEXT_PUBLIC_SIMIL_API_KEY disponible:", !!process.env.NEXT_PUBLIC_SIMIL_API_KEY)
+//   }, [])
+
+//   // Estado para el idioma seleccionado
+//   const [language, setLanguage] = useState<string>("es")
+
+//   // Estado para la grabación
+//   const [isRecording, setIsRecording] = useState<boolean>(false)
+//   const [isListening, setIsListening] = useState<boolean>(true) // Comienza escuchando automáticamente
+//   const [isProcessing, setIsProcessing] = useState<boolean>(false)
+//   const [transcribedText, setTranscribedText] = useState<string>("")
+//   const [responseText, setResponseText] = useState<string>("")
+//   const [clientId] = useState<string>(() => `client_${Date.now()}`)
+//   const [lastTimestamp, setLastTimestamp] = useState<number>(0)
+//   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false)
+//   const [error, setError] = useState<string | null>(null)
+//   const [isServerConnected, setIsServerConnected] = useState<boolean>(false)
+//   const [currentResponseId, setCurrentResponseId] = useState<string | null>(null)
+//   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([])
+//   const [audioLevel, setAudioLevel] = useState<number>(0)
+//   const [needsRestart, setNeedsRestart] = useState<boolean>(false)
+//   const [showSettings, setShowSettings] = useState<boolean>(false)
+//   const [sensitivityLevel, setSensitivityLevel] = useState<number>(5) // 1-10, donde 10 es más sensible
+
+//   // Estado para el avatar 3D
+//   const [avatarState, setAvatarState] = useState<"idle" | "listening" | "speaking">("idle")
+
+//   // Referencias
+//   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+//   const audioChunksRef = useRef<Blob[]>([])
+//   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+//   const audioElementRef = useRef<HTMLAudioElement | null>(null)
+//   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+//   const lastTranscribedTextRef = useRef<string>("")
+//   const silenceCounterRef = useRef<number>(0)
+//   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+//   const audioContextRef = useRef<AudioContext | null>(null)
+//   const analyserRef = useRef<AnalyserNode | null>(null)
+//   const microphoneStreamRef = useRef<MediaStream | null>(null)
+//   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null)
+//   const lastVoiceActivityRef = useRef<number>(Date.now())
+//   const processingQueueRef = useRef<boolean>(false)
+//   const restartTimerRef = useRef<NodeJS.Timeout | null>(null)
+//   const ambientNoiseLevelRef = useRef<number>(0.01)
+//   const calibrationTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+//   // Referencias para funciones para evitar dependencias circulares
+//   const startRecordingRef = useRef<() => Promise<void>>(async () => {})
+//   const stopRecordingRef = useRef<() => void>(() => {})
+
+//   // Función para calibrar el nivel de ruido ambiental
+//   const calibrateAmbientNoise = useCallback(() => {
+//     if (!analyserRef.current) return
+
+//     console.log("Calibrando nivel de ruido ambiental...")
+
+//     let samples = 0
+//     let totalLevel = 0
+
+//     const sampleNoise = () => {
+//       if (!analyserRef.current) return
+
+//       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+//       analyserRef.current.getByteFrequencyData(dataArray)
+
+//       const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
+//       const normalizedValue = average / 255
+
+//       totalLevel += normalizedValue
+//       samples++
+
+//       if (samples < 20) {
+//         // Tomar 20 muestras durante 2 segundos
+//         setTimeout(sampleNoise, 100)
+//       } else {
+//         // Calcular el promedio y establecer como nivel de ruido ambiental
+//         const avgLevel = totalLevel / samples
+//         ambientNoiseLevelRef.current = avgLevel * 0.7 // Usar 70% del nivel promedio como base
+
+//         if (typeof window !== "undefined") {
+//           window.ambientNoiseLevel = ambientNoiseLevelRef.current
+//         }
+
+//         console.log(`Nivel de ruido ambiental calibrado: ${ambientNoiseLevelRef.current.toFixed(4)}`)
+//       }
+//     }
+
+//     sampleNoise()
+//   }, [])
+
+//   // Función para limpiar todos los recursos de audio
+//   const cleanupAudioResources = useCallback(() => {
+//     console.log("Limpiando recursos de audio...")
+
+//     // Detener grabación si está activa
+//     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//       mediaRecorderRef.current.stop()
+//       mediaRecorderRef.current = null
+//     }
+
+//     // Detener reproducción de audio si está activa
+//     if (audioElementRef.current) {
+//       audioElementRef.current.pause()
+//       audioElementRef.current.src = ""
+//       audioElementRef.current = null
+//     }
+
+//     // Detener stream de micrófono
+//     if (microphoneStreamRef.current) {
+//       microphoneStreamRef.current.getTracks().forEach((track) => {
+//         track.stop()
+//       })
+//       microphoneStreamRef.current = null
+//     }
+
+//     // Limpiar timeouts
+//     if (recordingTimeoutRef.current) {
+//       clearTimeout(recordingTimeoutRef.current)
+//       recordingTimeoutRef.current = null
+//     }
+
+//     if (silenceTimerRef.current) {
+//       clearTimeout(silenceTimerRef.current)
+//       silenceTimerRef.current = null
+//     }
+
+//     if (restartTimerRef.current) {
+//       clearTimeout(restartTimerRef.current)
+//       restartTimerRef.current = null
+//     }
+
+//     if (calibrationTimeoutRef.current) {
+//       clearTimeout(calibrationTimeoutRef.current)
+//       calibrationTimeoutRef.current = null
+//     }
+
+//     // Resetear estados
+//     processingQueueRef.current = false
+//     audioChunksRef.current = []
+
+//     console.log("Recursos de audio limpiados correctamente")
+//   }, [])
+
+//   // Función para hacer ping al servidor
+//   const pingServer = useCallback(async () => {
+//     try {
+//       console.log("Intentando hacer ping al servidor...")
+
+//       // Usar fetch con un timeout para evitar esperas infinitas
+//       const controller = new AbortController()
+//       const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+//       const response = await fetch("/api/poll", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify({
+//           clientId,
+//           action: "ping",
+//         }),
+//         signal: controller.signal,
+//       })
+
+//       clearTimeout(timeoutId)
+
+//       if (!response.ok) {
+//         console.error(`Error de conexión: ${response.status}`)
+//         setIsServerConnected(false)
+//         setError(`Error de conexión: ${response.status}`)
+//         return false
+//       }
+
+//       const data = await response.json()
+
+//       if (data.success) {
+//         console.log("Ping exitoso al servidor")
+//         setIsServerConnected(true)
+//         setError(null)
+//         return true
+//       } else {
+//         console.error("Error en la respuesta del servidor:", data)
+//         setIsServerConnected(false)
+//         setError("Error en la respuesta del servidor")
+//         return false
+//       }
+//     } catch (error) {
+//       console.error("Error al hacer ping al servidor:", error)
+//       setIsServerConnected(false)
+//       setError(error instanceof Error ? error.message : "Error de conexión")
+//       return false
+//     }
+//   }, [clientId])
+
+//   // Función para interrumpir la respuesta actual
+//   const interruptResponse = useCallback(async () => {
+//     console.log("=== INICIANDO INTERRUPCIÓN DE RESPUESTA ===")
+
+//     // Actualizar el estado del avatar
+//     setAvatarState("idle")
+
+//     if (isPlayingAudio && audioElementRef.current) {
+//       audioElementRef.current.pause()
+//       setIsPlayingAudio(false)
+//     }
+
+//     // Limpiar recursos de audio
+//     cleanupAudioResources()
+
+//     try {
+//       await fetch("/api/poll", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify({
+//           clientId,
+//           action: "interrupt",
+//         }),
+//       })
+
+//       // Resetear el estado
+//       await fetch("/api/poll", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//         },
+//         body: JSON.stringify({
+//           clientId,
+//           action: "reset_state",
+//         }),
+//       })
+
+//       setIsProcessing(false)
+//       setCurrentResponseId(null)
+
+//       // Forzar reinicio de grabación con menor delay
+//       setNeedsRestart(true)
+
+//       // Reinicio inmediato
+//       setTimeout(() => {
+//         if (startRecordingRef.current) {
+//           startRecordingRef.current()
+//         }
+//       }, 200) // Más rápido para mejor fluidez
+
+//       console.log("=== INTERRUPCIÓN COMPLETADA, REINICIANDO GRABACIÓN ===")
+//     } catch (error) {
+//       console.error("Error al interrumpir respuesta:", error)
+//       setIsProcessing(false)
+//       setCurrentResponseId(null)
+
+//       // Forzar reinicio de grabación incluso si hay error
+//       setNeedsRestart(true)
+
+//       // Reinicio inmediato
+//       setTimeout(() => {
+//         if (startRecordingRef.current) {
+//           startRecordingRef.current()
+//         }
+//       }, 200)
+//     }
+//   }, [clientId, isPlayingAudio, cleanupAudioResources])
+
+//   // Función para reproducir respuesta de audio
+//   const playAudioResponse = useCallback(
+//     (audioBase64: string) => {
+//       try {
+//         console.log("=== INICIANDO REPRODUCCIÓN DE AUDIO ===")
+
+//         // Actualizar el estado del avatar
+//         setAvatarState("speaking")
+
+//         // Crear un nuevo elemento de audio para cada respuesta
+//         const audioElement = new Audio()
+
+//         // Establecer estado de carga
+//         setIsPlayingAudio(true)
+
+//         audioElement.oncanplaythrough = () => {
+//           console.log("Audio listo para reproducir")
+//         }
+
+//         audioElement.onplay = () => {
+//           setIsPlayingAudio(true)
+//           console.log("Audio comenzó a reproducirse")
+
+//           // Iniciar escucha activa para interrupciones mientras se reproduce el audio
+//           if (typeof window !== "undefined") {
+//             window.isListeningForInterruption = true
+//             window.interruptionCounter = 0 // Resetear contador al iniciar
+//           }
+//         }
+
+//         // Optimizar los tiempos de espera y transiciones
+//         audioElement.onended = () => {
+//           console.log("=== AUDIO TERMINADO, REINICIANDO GRABACIÓN ===")
+//           setIsPlayingAudio(false)
+
+//           // Actualizar el estado del avatar
+//           setAvatarState("idle")
+
+//           if (typeof window !== "undefined") {
+//             window.isListeningForInterruption = false
+//           }
+
+//           // Limpiar referencia
+//           if (audioElementRef.current === audioElement) {
+//             audioElementRef.current = null
+//           }
+
+//           // Resetear estados relevantes
+//           setIsProcessing(false)
+//           setCurrentResponseId(null)
+//           processingQueueRef.current = false
+
+//           // Iniciar grabación más rápido después de terminar el audio
+//           setTimeout(() => {
+//             console.log("Reiniciando grabación después de audio terminado")
+//             if (startRecordingRef.current) {
+//               startRecordingRef.current()
+//             }
+//           }, 200) // Reducido para mejor fluidez
+//         }
+
+//         audioElement.onerror = (e) => {
+//           console.error("Error al cargar audio:", e)
+//           setError("Error al reproducir audio")
+//           setIsPlayingAudio(false)
+
+//           // Actualizar el estado del avatar en caso de error
+//           setAvatarState("idle")
+
+//           if (typeof window !== "undefined") {
+//             window.isListeningForInterruption = false
+//           }
+
+//           // Forzar reinicio de grabación
+//           setNeedsRestart(true)
+//         }
+
+//         // Añadir botón físico para interrupciones (tecla Escape)
+//         const handleKeyDown = (e: KeyboardEvent) => {
+//           if (e.key === "Escape" || e.key === " ") {
+//             console.log("Interrupción manual detectada (tecla Escape o Espacio)")
+//             audioElement.pause()
+//             setIsPlayingAudio(false)
+//             if (typeof window !== "undefined") {
+//               window.isListeningForInterruption = false
+//             }
+//             interruptResponse()
+//           }
+//         }
+
+//         document.addEventListener("keydown", handleKeyDown)
+
+//         // Convertir base64 a blob
+//         const byteCharacters = atob(audioBase64)
+//         const byteNumbers = new Array(byteCharacters.length)
+//         for (let i = 0; i < byteCharacters.length; i++) {
+//           byteNumbers[i] = byteCharacters.charCodeAt(i)
+//         }
+//         const byteArray = new Uint8Array(byteNumbers)
+//         const blob = new Blob([byteArray], { type: "audio/mp3" })
+
+//         // Crear URL para el blob
+//         const audioUrl = URL.createObjectURL(blob)
+//         audioElement.src = audioUrl
+
+//         // Guardar referencia y reproducir
+//         audioElementRef.current = audioElement
+
+//         // Pequeño delay antes de reproducir
+//         setTimeout(() => {
+//           audioElement.play().catch((error) => {
+//             console.error("Error al reproducir audio:", error)
+//             setError("Error al reproducir audio: " + error.message)
+
+//             // Actualizar el estado del avatar en caso de error
+//             setAvatarState("idle")
+
+//             if (typeof window !== "undefined") {
+//               window.isListeningForInterruption = false
+//             }
+
+//             // Forzar reinicio de grabación
+//             setNeedsRestart(true)
+//           })
+//         }, 100) // Reducido para mejor fluidez
+
+//         // Limpiar el event listener cuando se desmonte
+//         return () => {
+//           document.removeEventListener("keydown", handleKeyDown)
+//         }
+//       } catch (error) {
+//         console.error("Error al procesar audio:", error)
+//         setError("Error al procesar audio: " + (error instanceof Error ? error.message : String(error)))
+
+//         // Actualizar el estado del avatar en caso de error
+//         setAvatarState("idle")
+
+//         if (typeof window !== "undefined") {
+//           window.isListeningForInterruption = false
+//         }
+
+//         // Forzar reinicio de grabación
+//         setNeedsRestart(true)
+//       }
+//     },
+//     [interruptResponse],
+//   )
+
+//   // Función para procesar mensajes del servidor
+//   const processMessages = useCallback(
+//     (messages: any[]) => {
+//       console.log("[processMessages] Procesando mensajes:", messages.length)
+
+//       for (const message of messages) {
+//         console.log("[processMessages] Procesando mensaje:", message.event)
+
+//         switch (message.event) {
+//           case "connected":
+//             console.log("[processMessages] Conexión establecida:", message.data)
+//             setIsServerConnected(true)
+
+//             // Iniciar grabación automáticamente al conectar
+//             setNeedsRestart(true)
+//             break
+
+//           case "transcription":
+//             console.log("[processMessages] Transcripción recibida:", message.data.text)
+//             if (message.data.text && message.data.text.trim().length > 0) {
+//               setTranscribedText(message.data.text)
+//               setConversationHistory((prev) => [...prev, { role: "user", content: message.data.text }])
+//               lastTranscribedTextRef.current = message.data.text
+//             }
+//             break
+
+//           case "response_chunk":
+//             console.log("[processMessages] Chunk de respuesta recibido:", message.data)
+//             if (message.data.responseId === currentResponseId || !currentResponseId) {
+//               setResponseText((prev) => {
+//                 if (message.data.isComplete) {
+//                   setConversationHistory((prev) => [...prev, { role: "assistant", content: message.data.text }])
+//                   return message.data.text
+//                 }
+//                 return prev + message.data.text
+//               })
+//             }
+//             break
+
+//           case "audio_response":
+//             console.log("[processMessages] Respuesta de audio recibida")
+//             if (message.data.responseId === currentResponseId || !currentResponseId) {
+//               console.log("[processMessages] Reproduciendo audio")
+//               playAudioResponse(message.data.audio)
+//             }
+//             break
+
+//           case "error":
+//             console.error("[processMessages] Error del servidor:", message.data)
+//             setError(message.data.message)
+//             setIsProcessing(false)
+
+//             // Actualizar el estado del avatar en caso de error
+//             setAvatarState("idle")
+
+//             // Reintentar grabación después de un error
+//             setNeedsRestart(true)
+//             break
+
+//           case "interrupted":
+//             console.log("Respuesta interrumpida")
+//             setIsProcessing(false)
+
+//             // Actualizar el estado del avatar
+//             setAvatarState("idle")
+
+//             // Detener cualquier reproducción de audio
+//             if (isPlayingAudio && audioElementRef.current) {
+//               audioElementRef.current.pause()
+//               setIsPlayingAudio(false)
+//             }
+
+//             // Reiniciar grabación después de interrupción
+//             setNeedsRestart(true)
+//             break
+
+//           case "wake_word_detected":
+//             console.log("Palabra clave detectada:", message.data.text)
+
+//             // Si estamos reproduciendo audio, detenerlo
+//             if (isPlayingAudio && audioElementRef.current) {
+//               audioElementRef.current.pause()
+//               setIsPlayingAudio(false)
+//             }
+
+//             // Interrumpir la respuesta actual
+//             interruptResponse()
+//             break
+
+//           case "state_reset":
+//             console.log("Estado reseteado:", message.data)
+//             setIsProcessing(false)
+//             setCurrentResponseId(null)
+
+//             // Actualizar el estado del avatar
+//             setAvatarState("idle")
+
+//             // Reiniciar grabación después de reset
+//             setNeedsRestart(true)
+//             break
+
+//           case "sentiment_analysis":
+//             console.log("Análisis de sentimiento recibido:", message.data)
+//             // Aquí podrías implementar lógica para manejar el sentimiento detectado
+//             break
+//         }
+//       }
+//     },
+//     [currentResponseId, isPlayingAudio, playAudioResponse, interruptResponse],
+//   )
+
+//   // Función para realizar el polling al servidor
+//   const startPolling = useCallback(() => {
+//     console.log("[startPolling] Iniciando polling")
+
+//     const intervalId = setInterval(async () => {
+//       try {
+//         console.log("[startPolling] Realizando solicitud de polling")
+//         const response = await fetch(`/api/poll?clientId=${clientId}&lastTimestamp=${lastTimestamp}`)
+
+//         if (!response.ok) {
+//           throw new Error(`Error en la respuesta: ${response.status}`)
+//         }
+
+//         const messages = await response.json()
+//         console.log("[startPolling] Mensajes recibidos:", messages.length)
+
+//         if (!Array.isArray(messages)) {
+//           console.warn("[startPolling] Respuesta del servidor no es un array:", messages)
+//           return
+//         }
+
+//         if (messages.length > 0) {
+//           processMessages(messages)
+//           const latestTimestamp = Math.max(...messages.map((msg) => msg.timestamp))
+//           setLastTimestamp(latestTimestamp)
+//         }
+
+//         setIsServerConnected(true)
+//         setError(null)
+//       } catch (error) {
+//         console.error("[startPolling] Error:", error)
+//         setIsServerConnected(false)
+//         setError(error instanceof Error ? error.message : "Error de conexión")
+
+//         setTimeout(() => {
+//           if (!isServerConnected) {
+//             pingServer()
+//           }
+//         }, 5000)
+//       }
+//     }, 1000)
+
+//     pollingIntervalRef.current = intervalId
+
+//     return () => clearInterval(intervalId)
+//   }, [clientId, lastTimestamp, isServerConnected, processMessages, pingServer])
+
+//   // Función para analizar el audio y detectar interrupciones
+//   const analyzeAudio = useCallback(() => {
+//     if (!analyserRef.current) return
+
+//     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+//     analyserRef.current.getByteFrequencyData(dataArray)
+
+//     // Calcular el nivel de audio promedio
+//     const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
+//     const normalizedValue = average / 255 // Normalizar a un valor entre 0 y 1
+
+//     setAudioLevel(normalizedValue)
+
+//     // Ajustar el umbral de detección según el nivel de sensibilidad configurado
+//     const adjustedThreshold = (VOICE_DETECTION_THRESHOLD * (11 - sensitivityLevel)) / 5
+
+//     // Usar el nivel de ruido ambiental para ajustar el umbral
+//     const dynamicThreshold = Math.max(adjustedThreshold, ambientNoiseLevelRef.current * 1.5)
+
+//     // Detectar actividad de voz
+//     if (normalizedValue > dynamicThreshold) {
+//       // Hay actividad de voz
+//       lastVoiceActivityRef.current = Date.now()
+
+//       // Si estamos reproduciendo audio y hay actividad de voz fuerte (posible interrupción)
+//       if (
+//         isPlayingAudio &&
+//         audioElementRef.current &&
+//         typeof window !== "undefined" &&
+//         window.isListeningForInterruption
+//       ) {
+//         // Usar un umbral adaptativo basado en el nivel de audio ambiente y sensibilidad
+//         const interruptionBaseThreshold = (dynamicThreshold * 2.0 * (11 - sensitivityLevel)) / 5
+//         const adaptiveThreshold = Math.max(interruptionBaseThreshold, normalizedValue * 0.7)
+
+//         if (normalizedValue > adaptiveThreshold) {
+//           console.log(
+//             `Posible interrupción detectada durante reproducción, nivel: ${normalizedValue.toFixed(2)}, umbral: ${adaptiveThreshold.toFixed(2)}`,
+//           )
+
+//           // Contar cuántas muestras consecutivas tienen nivel alto
+//           if (typeof window !== "undefined") {
+//             if (!window.interruptionCounter) window.interruptionCounter = 0
+//             window.interruptionCounter++
+
+//             // Incrementar el contador más rápido si el nivel es muy alto
+//             if (normalizedValue > adaptiveThreshold * 1.5) {
+//               window.interruptionCounter++
+//             }
+//           }
+
+//           // Requerir más muestras consecutivas para interrupción pero con umbral dinámico
+//           // Ajustar según el nivel de sensibilidad (3-1 muestras)
+//           const requiredSamples = Math.max(1, 4 - Math.floor(sensitivityLevel / 3))
+
+//           if (typeof window !== "undefined" && window.interruptionCounter > requiredSamples) {
+//             console.log("Interrupción confirmada por nivel de audio, deteniendo audio")
+//             window.interruptionCounter = 0
+//             window.isListeningForInterruption = false
+//             audioElementRef.current.pause()
+//             setIsPlayingAudio(false)
+//             interruptResponse()
+//           }
+//         } else {
+//           // Reducir el contador gradualmente si el nivel baja
+//           if (typeof window !== "undefined" && window.interruptionCounter > 0) {
+//             window.interruptionCounter -= 0.5 // Reducción más gradual
+//           }
+//         }
+//       } else {
+//         // Resetear contador si no estamos reproduciendo o el nivel no es suficiente
+//         if (typeof window !== "undefined" && window.interruptionCounter) {
+//           window.interruptionCounter = 0
+//         }
+//       }
+//     } else {
+//       // Limpiar el temporizador de silencio si existe
+//       if (silenceTimerRef.current) {
+//         clearTimeout(silenceTimerRef.current)
+//         silenceTimerRef.current = null
+//       }
+
+//       if (isRecording && !silenceTimerRef.current) {
+//         // No hay actividad de voz y estamos grabando
+//         // Iniciar temporizador para detener la grabación después de un período de silencio
+//         silenceTimerRef.current = setTimeout(() => {
+//           if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//             console.log("Silencio detectado, deteniendo grabación")
+//             stopRecordingRef.current()
+//           }
+//           silenceTimerRef.current = null
+//         }, SILENCE_THRESHOLD_TIME)
+
+//         // Resetear contador de interrupción
+//         if (typeof window !== "undefined" && window.interruptionCounter) {
+//           window.interruptionCounter = 0
+//         }
+//       }
+//     }
+
+//     // Continuar analizando
+//     requestAnimationFrame(analyzeAudio)
+//   }, [isRecording, isPlayingAudio, interruptResponse, sensitivityLevel])
+
+//   // Función para detener la grabación
+//   const stopRecording = useCallback(() => {
+//     console.log("Deteniendo grabación...")
+
+//     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//       mediaRecorderRef.current.stop()
+//     }
+
+//     if (recordingTimeoutRef.current) {
+//       clearTimeout(recordingTimeoutRef.current)
+//       recordingTimeoutRef.current = null
+//     }
+
+//     if (silenceTimerRef.current) {
+//       clearTimeout(silenceTimerRef.current)
+//       silenceTimerRef.current = null
+//     }
+
+//     setIsRecording(false)
+
+//     // Actualizar el estado del avatar
+//     setAvatarState("idle")
+//   }, [])
+
+//   // Asignar la función stopRecording a la referencia
+//   useEffect(() => {
+//     stopRecordingRef.current = stopRecording
+//   }, [stopRecording])
+
+//   // Función para iniciar la grabación
+//   const startRecording = useCallback(async () => {
+//     // Verificar si ya estamos grabando o procesando
+//     if (isRecording || isProcessing || isPlayingAudio) {
+//       console.log("No se puede iniciar grabación: ya hay una grabación o procesamiento en curso")
+//       return
+//     }
+
+//     // Asegurar reseteo
+//     processingQueueRef.current = false
+
+//     try {
+//       console.log("=== INICIANDO GRABACIÓN ===")
+//       processingQueueRef.current = true
+
+//       // Limpiar recursos previos
+//       cleanupAudioResources()
+
+//       // Resetear el estado
+//       setError(null)
+//       audioChunksRef.current = []
+
+//       // Actualizar el estado del avatar
+//       setAvatarState("listening")
+
+//       // Solicitar permisos de micrófono
+//       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+//       microphoneStreamRef.current = stream
+
+//       // Configurar análisis de audio
+//       if (!audioContextRef.current) {
+//         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+//         if (typeof window !== "undefined") {
+//           window.audioContext = audioContextRef.current
+//         }
+//       }
+
+//       if (!analyserRef.current) {
+//         analyserRef.current = audioContextRef.current.createAnalyser()
+//         analyserRef.current.fftSize = 256
+//       }
+
+//       const source = audioContextRef.current.createMediaStreamSource(stream)
+//       source.connect(analyserRef.current)
+
+//       // Calibrar el nivel de ruido ambiental después de un breve período
+//       if (calibrationTimeoutRef.current) {
+//         clearTimeout(calibrationTimeoutRef.current)
+//       }
+
+//       calibrationTimeoutRef.current = setTimeout(() => {
+//         calibrateAmbientNoise()
+//       }, 1000)
+
+//       // Iniciar análisis de audio
+//       analyzeAudio()
+
+//       // Crear el MediaRecorder con manejo de errores mejorado
+//       const options: any = {}
+
+//       if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+//         options.mimeType = "audio/webm;codecs=opus"
+//       } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+//         options.mimeType = "audio/webm"
+//       }
+
+//       const mediaRecorder = new MediaRecorder(stream, options)
+//       mediaRecorderRef.current = mediaRecorder
+
+//       // Configurar eventos
+//       mediaRecorder.ondataavailable = (event) => {
+//         if (event.data.size > 0) {
+//           audioChunksRef.current.push(event.data)
+//         }
+//       }
+
+//       mediaRecorder.onerror = (event) => {
+//         console.error("Error en MediaRecorder:", event)
+//         setError("Error en la grabación: " + (event.error ? event.error.message : "Error desconocido"))
+//         processingQueueRef.current = false
+//         setIsRecording(false)
+
+//         // Actualizar el estado del avatar en caso de error
+//         setAvatarState("idle")
+
+//         // Reintentar después de un error
+//         setNeedsRestart(true)
+//       }
+
+//       mediaRecorder.onstop = async () => {
+//         console.log("Grabación detenida, procesando audio...")
+
+//         // Si no hay chunks, reiniciar grabación
+//         if (audioChunksRef.current.length === 0) {
+//           console.log("No hay datos de audio, reiniciando grabación")
+//           setIsRecording(false)
+//           processingQueueRef.current = false
+//           setNeedsRestart(true)
+//           return
+//         }
+
+//         try {
+//           // Crear blob de audio
+//           const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || "audio/webm" })
+
+//           // Si el blob es muy pequeño, probablemente sea ruido
+//           if (audioBlob.size < 1000) {
+//             console.log(`Audio demasiado pequeño (${audioBlob.size} bytes), probablemente ruido`)
+//             setIsRecording(false)
+//             processingQueueRef.current = false
+//             setNeedsRestart(true)
+//             return
+//           }
+
+//           // Convertir blob a base64
+//           const reader = new FileReader()
+//           reader.readAsDataURL(audioBlob)
+//           reader.onloadend = async () => {
+//             const base64Data = reader.result?.toString() || ""
+//             const base64Audio = base64Data.split(",")[1] // Extraer solo la parte base64
+
+//             if (base64Audio) {
+//               setIsProcessing(true)
+
+//               try {
+//                 // Enviar audio al servidor
+//                 const response = await fetch("/api/poll", {
+//                   method: "POST",
+//                   headers: {
+//                     "Content-Type": "application/json",
+//                   },
+//                   body: JSON.stringify({
+//                     clientId,
+//                     action: "transcribe",
+//                     language,
+//                     data: {
+//                       audio: base64Audio,
+//                       lastText: lastTranscribedTextRef.current,
+//                       conversationHistory: conversationHistory,
+//                     },
+//                   }),
+//                 })
+
+//                 if (!response.ok) {
+//                   throw new Error(`Error en la solicitud: ${response.status}`)
+//                 }
+
+//                 const data = await response.json()
+
+//                 if (data.success) {
+//                   if (!data.ignored && data.transcribedText) {
+//                     lastTranscribedTextRef.current = data.transcribedText
+//                     setCurrentResponseId(data.responseId || null)
+//                   } else if (data.ignored) {
+//                     // Si la transcripción fue ignorada, reanudar la escucha
+//                     setIsProcessing(false)
+//                     processingQueueRef.current = false
+//                     setNeedsRestart(true)
+//                   }
+//                 } else {
+//                   console.warn("Transcripción ignorada:", data.reason)
+//                   setIsProcessing(false)
+//                   processingQueueRef.current = false
+//                   setNeedsRestart(true)
+//                 }
+//               } catch (error) {
+//                 console.error("Error al enviar audio:", error)
+//                 setError("Error al enviar audio: " + (error instanceof Error ? error.message : String(error)))
+//                 setIsProcessing(false)
+//                 processingQueueRef.current = false
+//                 setNeedsRestart(true)
+//               }
+//             } else {
+//               processingQueueRef.current = false
+//               setNeedsRestart(true)
+//             }
+//           }
+//         } catch (error) {
+//           console.error("Error al procesar audio:", error)
+//           setError("Error al procesar audio: " + (error instanceof Error ? error.message : String(error)))
+//           setIsRecording(false)
+//           setIsProcessing(false)
+//           processingQueueRef.current = false
+//           setNeedsRestart(true)
+//         }
+//       }
+
+//       // Iniciar grabación
+//       mediaRecorder.start()
+//       setIsRecording(true)
+//       processingQueueRef.current = false
+//       console.log("Grabación iniciada correctamente")
+
+//       // Configurar timeout para detener la grabación después de MAX_RECORDING_DURATION
+//       if (recordingTimeoutRef.current) {
+//         clearTimeout(recordingTimeoutRef.current)
+//       }
+
+//       // Aumentar el tiempo máximo de grabación para frases más largas
+//       recordingTimeoutRef.current = setTimeout(() => {
+//         if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+//           console.log("Tiempo máximo de grabación alcanzado, deteniendo grabación")
+//           stopRecordingRef.current()
+//         }
+//       }, MAX_RECORDING_DURATION)
+//     } catch (error) {
+//       console.error("Error al iniciar grabación:", error)
+//       setError("Error al iniciar grabación: " + (error instanceof Error ? error.message : String(error)))
+//       setIsRecording(false)
+//       processingQueueRef.current = false
+
+//       // Actualizar el estado del avatar en caso de error
+//       setAvatarState("idle")
+
+//       // Reintentar después de un error
+//       setNeedsRestart(true)
+//     }
+//   }, [
+//     clientId,
+//     language,
+//     conversationHistory,
+//     isRecording,
+//     isProcessing,
+//     isPlayingAudio,
+//     analyzeAudio,
+//     cleanupAudioResources,
+//     calibrateAmbientNoise,
+//   ])
+
+//   // Asignar la función startRecording a la referencia
+//   useEffect(() => {
+//     startRecordingRef.current = startRecording
+//   }, [startRecording])
+
+//   // Efecto para iniciar el polling al cargar la página
+//   useEffect(() => {
+//     const cleanup = startPolling()
+
+//     // Limpiar al desmontar
+//     return cleanup
+//   }, [startPolling])
+
+//   // Efecto para hacer ping al servidor
+//   useEffect(() => {
+//     // Hacer ping inicial con reintento
+//     const doPing = async () => {
+//       try {
+//         const success = await pingServer()
+//         if (!success) {
+//           console.log("Ping fallido, reintentando en 3 segundos...")
+//           setTimeout(doPing, 3000)
+//         } else {
+//           console.log("Conexión establecida con el servidor")
+//         }
+//       } catch (error) {
+//         console.error("Error en ping inicial, reintentando en 3 segundos:", error)
+//         setTimeout(doPing, 3000)
+//       }
+//     }
+
+//     doPing()
+
+//     // Configurar intervalo de ping con manejo de errores
+//     pingIntervalRef.current = setInterval(() => {
+//       pingServer().catch((error) => {
+//         console.error("Error en ping periódico:", error)
+//       })
+//     }, 30000)
+
+//     return () => {
+//       if (pingIntervalRef.current) {
+//         clearInterval(pingIntervalRef.current)
+//       }
+//     }
+//   }, [pingServer])
+
+//   // Efecto para limpiar recursos al desmontar
+//   useEffect(() => {
+//     return () => {
+//       cleanupAudioResources()
+//     }
+//   }, [cleanupAudioResources])
+
+//   // Efecto para reiniciar la grabación cuando sea necesario
+//   useEffect(() => {
+//     if (needsRestart) {
+//       console.log("Reiniciando grabación por needsRestart flag...")
+
+//       // Limpiar cualquier timer de reinicio existente
+//       if (restartTimerRef.current) {
+//         clearTimeout(restartTimerRef.current)
+//       }
+
+//       // Usar un timeout más corto para asegurar que todos los estados se actualicen
+//       restartTimerRef.current = setTimeout(() => {
+//         if (!isRecording && !isProcessing && !isPlayingAudio) {
+//           console.log("Ejecutando reinicio de grabación...")
+//           setNeedsRestart(false)
+//           startRecordingRef.current()
+//         } else {
+//           console.log("No se puede reiniciar grabación, estados actuales:", {
+//             isRecording,
+//             isProcessing,
+//             isPlayingAudio,
+//           })
+
+//           // Si hay un bloqueo, forzar limpieza y reintentar
+//           if (isRecording || isProcessing || isPlayingAudio) {
+//             console.log("Forzando limpieza de recursos y reinicio...")
+//             cleanupAudioResources()
+//             processingQueueRef.current = false
+//             setIsRecording(false)
+//             setIsProcessing(false)
+//             setIsPlayingAudio(false)
+
+//             // Reintentar después de la limpieza forzada con menor delay
+//             setTimeout(() => {
+//               setNeedsRestart(false)
+//               startRecordingRef.current()
+//             }, 200) // Reducido para mejor fluidez
+//           }
+//         }
+//       }, 500) // Reducido para mejor fluidez
+
+//       return () => {
+//         if (restartTimerRef.current) {
+//           clearTimeout(restartTimerRef.current)
+//         }
+//       }
+//     }
+//   }, [needsRestart, isRecording, isProcessing, isPlayingAudio, cleanupAudioResources])
+
+//   // Mecanismo de recuperación menos agresivo
+//   useEffect(() => {
+//     const recoveryInterval = setInterval(() => {
+//       // Verificar si el sistema podría estar atascado
+//       const currentTime = Date.now()
+//       const timeSinceLastActivity = currentTime - lastVoiceActivityRef.current
+
+//       if (!isRecording && !isProcessing && !isPlayingAudio && timeSinceLastActivity > 4000) {
+//         console.log("Sistema posiblemente atascado, reiniciando grabación...")
+//         processingQueueRef.current = false
+
+//         if (startRecordingRef.current) {
+//           startRecordingRef.current()
+//         }
+//       }
+//     }, 3000) // Verificar con menos frecuencia
+
+//     return () => clearInterval(recoveryInterval)
+//   }, [isRecording, isProcessing, isPlayingAudio])
+
+//   // Añadir un botón físico para interrupciones
+//   useEffect(() => {
+//     const handleKeyDown = (e: KeyboardEvent) => {
+//       if ((e.key === "Escape" || e.key === " ") && isPlayingAudio) {
+//         console.log("Interrupción manual global detectada (tecla Escape o Espacio)")
+//         interruptResponse()
+//       }
+//     }
+
+//     document.addEventListener("keydown", handleKeyDown)
+
+//     return () => {
+//       document.removeEventListener("keydown", handleKeyDown)
+//     }
+//   }, [isPlayingAudio, interruptResponse])
+
+//   // Renderizar la interfaz de usuario
+//   return (
+//     <main className="flex min-h-screen flex-col items-center justify-center p-4 bg-gray-100">
+//       <Card className="w-full max-w-md">
+//         <CardContent className="p-6">
+//           <div className="flex justify-between items-center mb-6">
+//             <h1 className="text-2xl font-bold">Asistente de Voz</h1>
+//             <div className="flex items-center gap-2">
+//               <div className={`w-3 h-3 rounded-full mr-2 ${isServerConnected ? "bg-green-500" : "bg-red-500"}`}></div>
+//               <span className="text-sm text-gray-500">{isServerConnected ? "Conectado" : "Desconectado"}</span>
+//               <button
+//                 onClick={() => setShowSettings(!showSettings)}
+//                 className="p-1 rounded-full hover:bg-gray-200 transition-colors"
+//               >
+//                 <Settings className="h-5 w-5 text-gray-500" />
+//               </button>
+//             </div>
+//           </div>
+
+//           {showSettings && (
+//             <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+//               <h3 className="text-sm font-medium mb-2">Configuración</h3>
+//               <div className="space-y-3">
+//                 <div>
+//                   <label className="text-sm text-gray-700 block mb-1">Idioma</label>
+//                   <Select value={language} onValueChange={setLanguage}>
+//                     <SelectTrigger>
+//                       <SelectValue placeholder="Selecciona un idioma" />
+//                     </SelectTrigger>
+//                     <SelectContent>
+//                       <SelectItem value="es">Español</SelectItem>
+//                       <SelectItem value="en">English</SelectItem>
+//                       <SelectItem value="fr">Français</SelectItem>
+//                       <SelectItem value="it">Italiano</SelectItem>
+//                     </SelectContent>
+//                   </Select>
+//                 </div>
+//                 <div>
+//                   <label className="text-sm text-gray-700 block mb-1">
+//                     Sensibilidad de detección de voz: {sensitivityLevel}
+//                   </label>
+//                   <input
+//                     type="range"
+//                     min="1"
+//                     max="10"
+//                     value={sensitivityLevel}
+//                     onChange={(e) => setSensitivityLevel(Number.parseInt(e.target.value))}
+//                     className="w-full"
+//                   />
+//                   <div className="flex justify-between text-xs text-gray-500">
+//                     <span>Baja</span>
+//                     <span>Alta</span>
+//                   </div>
+//                 </div>
+//                 <div>
+//                   <button
+//                     onClick={calibrateAmbientNoise}
+//                     className="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded transition-colors flex items-center justify-center gap-2"
+//                   >
+//                     <RefreshCw className="h-4 w-4" />
+//                     Calibrar ruido ambiental
+//                   </button>
+//                 </div>
+//               </div>
+//             </div>
+//           )}
+
+//           {!showSettings && (
+//             <div className="mb-4">
+//               <Select value={language} onValueChange={setLanguage}>
+//                 <SelectTrigger>
+//                   <SelectValue placeholder="Selecciona un idioma" />
+//                 </SelectTrigger>
+//                 <SelectContent>
+//                   <SelectItem value="es">Español</SelectItem>
+//                   <SelectItem value="en">English</SelectItem>
+//                   <SelectItem value="fr">Français</SelectItem>
+//                   <SelectItem value="it">Italiano</SelectItem>
+//                 </SelectContent>
+//               </Select>
+//             </div>
+//           )}
+
+//           <div className="space-y-4">
+//             <div className="p-4 bg-gray-50 rounded-lg min-h-[100px] max-h-[200px] overflow-y-auto">
+//               <p className="text-gray-700">{transcribedText || "Habla para ver la transcripción aquí..."}</p>
+//             </div>
+
+//             <div className="p-4 bg-blue-50 rounded-lg min-h-[100px] max-h-[200px] overflow-y-auto">
+//               <p className="text-blue-700">{responseText || "La respuesta aparecerá aquí..."}</p>
+//             </div>
+
+//             {error && (
+//               <div className="p-4 bg-red-50 rounded-lg">
+//                 <p className="text-red-700">{error}</p>
+//               </div>
+//             )}
+
+//             {/* Indicador de nivel de audio */}
+//             <div className="w-full bg-gray-200 rounded-full h-2.5">
+//               <div
+//                 className="bg-blue-600 h-2.5 rounded-full transition-all duration-100"
+//                 style={{ width: `${Math.min(audioLevel * 100, 100)}%` }}
+//               ></div>
+//             </div>
+
+//             <div className="p-4 bg-green-50 rounded-lg text-center">
+//               <p className="text-green-700 font-medium">
+//                 {isRecording ? (
+//                   <span className="flex items-center justify-center">
+//                     <Mic className="mr-2 h-5 w-5 animate-pulse text-red-500" /> Escuchando...
+//                   </span>
+//                 ) : isProcessing ? (
+//                   "Procesando..."
+//                 ) : isPlayingAudio ? (
+//                   <span className="flex items-center justify-center">
+//                     <Volume2 className="mr-2 h-5 w-5 animate-pulse" /> Reproduciendo respuesta...
+//                   </span>
+//                 ) : (
+//                   "Iniciando escucha..."
+//                 )}
+//               </p>
+//               <p className="text-xs text-gray-500 mt-2">
+//                 Di "oye", "disculpa" o "para" para interrumpir la respuesta actual
+//               </p>
+//             </div>
+
+//             {/* Botón de interrupción manual */}
+//             {isPlayingAudio && (
+//               <button
+//                 onClick={interruptResponse}
+//                 className="w-full py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded transition-colors"
+//               >
+//                 Interrumpir respuesta
+//               </button>
+//             )}
+
+//             {/* Botón para forzar reinicio de grabación */}
+//             {!isRecording && !isPlayingAudio && (
+//               <button
+//                 onClick={() => setNeedsRestart(true)}
+//                 className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded transition-colors"
+//               >
+//                 Reiniciar grabación
+//               </button>
+//             )}
+//           </div>
+
+//           <div className="mt-6">
+//             <h3 className="text-sm font-medium mb-2">Historial de conversación:</h3>
+//             <div className="bg-white rounded-lg p-3 max-h-[200px] overflow-y-auto text-xs">
+//               {conversationHistory.length === 0 ? (
+//                 <p className="text-gray-500">No hay historial de conversación</p>
+//               ) : (
+//                 conversationHistory.map((msg, index) => (
+//                   <div key={index} className={`mb-2 ${msg.role === "user" ? "text-blue-600" : "text-green-600"}`}>
+//                     <span className="font-bold">{msg.role === "user" ? "Tú: " : "Asistente: "}</span>
+//                     {msg.content}
+//                   </div>
+//                 ))
+//               )}
+//             </div>
+//           </div>
+
+//           {/* Avatar 3D */}
+//           <div className="mt-6 bg-gray-50 rounded-lg p-4">
+//             <h3 className="text-sm font-medium mb-2">Avatar:</h3>
+//             <div className="h-80 bg-gray-100 rounded-lg relative overflow-hidden">
+//               {/* Intentar cargar el Avatar3D, con fallback a FallbackAvatar si falla */}
+//               <ErrorBoundary fallback={<FallbackAvatar state={avatarState} text={responseText} />}>
+//                 <Avatar3D
+//                   state={avatarState}
+//                   text={responseText}
+//                   audioUrl={audioElementRef.current?.src || ""}
+//                   onAnimationComplete={() => console.log("Animación completada")}
+//                 />
+//               </ErrorBoundary>
+//             </div>
+//           </div>
+//         </CardContent>
+//       </Card>
+//     </main>
+//   )
+// }
+
+
+
+
+
+
 
 
 

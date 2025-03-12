@@ -1,156 +1,127 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useRef, forwardRef, useImperativeHandle } from "react"
+import { useEffect, useRef, useState } from "react";
+import Script from "next/script";
+import { createAvatar } from "simli-client"; // Intentar importar el método directamente
 
 interface Avatar3DProps {
-  state?: "idle" | "listening" | "speaking"
-  isListening?: boolean
-  isSpeaking?: boolean
-  speechText?: string
+  state: "idle" | "listening" | "speaking";
+  audioUrl?: string;
+  text?: string;
+  onAnimationComplete?: () => void;
 }
 
-const Avatar3D = forwardRef<HTMLIFrameElement, Avatar3DProps>(function Avatar3D(
-  { state, isListening, isSpeaking, speechText = "" },
-  ref,
-) {
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
-  const currentState = state || (isSpeaking ? "speaking" : isListening ? "listening" : "idle")
-  const apiKey = process.env.NEXT_PUBLIC_SIMIL_API_KEY
+export default function Avatar3D({
+  state,
+  audioUrl,
+  text,
+  onAnimationComplete,
+}: Avatar3DProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isAvatarLoaded, setIsAvatarLoaded] = useState(false);
+  const avatarRef = useRef<any>(null);
+  const apiKey = process.env.NEXT_PUBLIC_SIMLI_API_KEY;
 
-  // Expose the iframe ref to parent component
-  useImperativeHandle(ref, () => iframeRef.current as HTMLIFrameElement)
-
-  // Handle messages from the iframe
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type) {
-        switch (event.data.type) {
-          case "AVATAR_READY":
-            console.log("Avatar is ready")
-            setIsLoaded(true)
-            setError(null)
-            break
-
-          case "AVATAR_ERROR":
-            console.error("Avatar error:", event.data.error)
-            setError(event.data.error || "Error en el avatar")
-            break
-
-          case "SPEAK_COMPLETE":
-            console.log("Avatar finished speaking")
-            break
-        }
-      }
+    if (!containerRef.current) {
+      console.error("❌ No se encontró el contenedor para el avatar.");
+      return;
     }
 
-    window.addEventListener("message", handleMessage)
-    return () => window.removeEventListener("message", handleMessage)
-  }, [])
+    if (!apiKey) {
+      console.error("❌ API Key de Simli no configurada. Revisa tu archivo .env.local");
+      return;
+    }
 
-  // Send message to the iframe
-  const sendMessage = (type: string, data: any = {}) => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
+    const initializeAvatar = async () => {
       try {
-        iframeRef.current.contentWindow.postMessage({ type, data }, "*")
-      } catch (err) {
-        console.error("Error sending message to avatar:", err)
+        console.log("✅ Inicializando avatar con Simli...");
+
+        // Intentar crear el avatar utilizando el método createAvatar
+        const avatar = await createAvatar({
+          apiKey,
+          container: containerRef.current,
+          model: "clara",
+          options: {
+            cameraTarget: "head",
+            cameraDistance: 0.7,
+            backgroundColor: "#f3f4f6",
+          },
+        });
+
+        avatarRef.current = avatar;
+        setIsAvatarLoaded(true);
+        console.log("✅ Avatar cargado exitosamente.");
+
+        await avatar.playAnimation("idle");
+      } catch (error) {
+        console.error("❌ Error al inicializar el avatar:", error);
       }
-    }
-  }
+    };
 
-  // Handle state changes
+    initializeAvatar();
+  }, [apiKey]);
+
   useEffect(() => {
-    if (!isLoaded) return
+    const handleAvatarState = async () => {
+      if (!avatarRef.current) {
+        console.warn("⚠️ Avatar aún no está listo para cambiar de estado.");
+        return;
+      }
 
-    switch (currentState) {
-      case "speaking":
-        if (speechText) {
-          sendMessage("SPEAK", { text: speechText })
+      const avatar = avatarRef.current;
+      console.log(`🔄 Cambiando estado del avatar a: ${state}`);
+
+      try {
+        if (state === "speaking" && text && audioUrl) {
+          console.log("💬 Avatar hablando con texto y audio.");
+          const audio = new Audio(audioUrl);
+          audio.oncanplaythrough = async () => {
+            await avatar.speak(text, { audio, animation: true });
+            if (onAnimationComplete) onAnimationComplete();
+          };
+          audio.load();
+        } else if (state === "listening") {
+          await avatar.playAnimation("listening");
         } else {
-          sendMessage("ANIMATE", { animation: "speaking" })
+          await avatar.playAnimation("idle");
         }
-        break
+      } catch (error) {
+        console.error("❌ Error al cambiar el estado del avatar:", error);
+      }
+    };
 
-      case "listening":
-        sendMessage("LISTEN")
-        break
-
-      case "idle":
-        sendMessage("IDLE")
-        break
-    }
-  }, [currentState, isLoaded, speechText])
-
-  // Initialize avatar when API key is available
-  useEffect(() => {
-    if (apiKey && iframeRef.current) {
-      // Set API key
-      sendMessage("SET_API_KEY", { apiKey })
-    }
-  }, [apiKey])
+    handleAvatarState();
+  }, [state, text, audioUrl, onAnimationComplete]);
 
   return (
-    <div className="w-full h-full relative bg-gray-100 rounded-lg overflow-hidden">
-      {/* Loading overlay */}
-      {!isLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10">
-          <div className="flex flex-col items-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-            <p className="text-gray-600">Cargando avatar...</p>
-          </div>
-        </div>
-      )}
+    <>
+      <div className="w-full h-full relative" style={{ minHeight: "300px" }}>
+        <div ref={containerRef} className="w-full h-full absolute inset-0"></div>
 
-      {/* Error overlay */}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100/90 z-10">
-          <div className="text-center p-4">
-            <p className="text-red-500 mb-2">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-              Reintentar
-            </button>
+        {!isAvatarLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            <p className="text-gray-500 mt-2">Cargando avatar...</p>
           </div>
-        </div>
-      )}
-
-      {/* Avatar iframe */}
-      <iframe
-        ref={iframeRef}
-        src="/avatar.html"
-        className="w-full h-full border-0"
-        allow="camera; microphone; clipboard-write"
-        title="SIMIL Avatar"
-      />
-
-      {/* Status indicator */}
-      <div className="absolute bottom-4 left-0 right-0 text-center z-10 pointer-events-none">
-        <div className="inline-block px-3 py-1 bg-black bg-opacity-50 rounded-full text-white text-sm">
-          <div className="flex items-center">
-            <div
-              className={`w-2 h-2 rounded-full mr-2 ${
-                currentState === "idle"
-                  ? "bg-gray-400"
-                  : currentState === "listening"
-                    ? "bg-blue-500 animate-pulse"
-                    : "bg-green-500 animate-pulse"
-              }`}
-            />
-            {currentState === "idle" && "Esperando..."}
-            {currentState === "listening" && "Escuchando..."}
-            {currentState === "speaking" && "Hablando..."}
-          </div>
-        </div>
+        )}
       </div>
-    </div>
-  )
-})
+    </>
+  );
+}
 
-export default Avatar3D
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

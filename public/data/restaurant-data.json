@@ -1,145 +1,57 @@
 {
-    "restaurante": {
-      "nombre": "La Trattoria Italiana",
-      "descripcion": "Auténtica cocina italiana con ingredientes frescos y de temporada",
-      "horario": {
-        "lunes": "Cerrado",
-        "martes": "18:00 - 23:00",
-        "miercoles": "18:00 - 23:00",
-        "jueves": "18:00 - 23:00",
-        "viernes": "18:00 - 00:00",
-        "sabado": "13:00 - 00:00",
-        "domingo": "13:00 - 22:00"
-      },
-      "politica_reservas": "Se recomienda reservar con al menos 24 horas de antelación para grupos de más de 4 personas",
-      "chef": "Marco Rossi",
-      "especialidad": "Pasta fresca hecha a mano y pizzas en horno de leña"
-    },
-    "menu": {
-      "entrantes": [
-        {
-          "id": "e1",
-          "nombre": "Bruschetta Clásica",
-          "descripcion": "Pan tostado con tomate fresco, ajo, albahaca y aceite de oliva virgen extra",
-          "precio": "6.50",
-          "alergenos": ["gluten"],
-          "vegetariano": true,
-          "vegano": true,
-          "popular": true,
-          "imagen": "/images/menu/bruschetta.jpg",
-          "preparacion": "Nuestras bruschettas se preparan al momento con pan artesanal"
-        },
-        {
-          "id": "e2",
-          "nombre": "Carpaccio de Ternera",
-          "descripcion": "Finas láminas de ternera con rúcula, parmesano y aceite de trufa",
-          "precio": "12.90",
-          "alergenos": ["lácteos"],
-          "vegetariano": false,
-          "vegano": false,
-          "popular": true,
-          "imagen": "/images/menu/carpaccio.jpg",
-          "preparacion": "Utilizamos carne de ternera premium madurada 30 días"
-        },
-        {
-          "id": "e3",
-          "nombre": "Burrata con Tomate",
-          "descripcion": "Burrata fresca con tomates cherry, rúcula y reducción de balsámico",
-          "precio": "10.50",
-          "alergenos": ["lácteos"],
-          "vegetariano": true,
-          "vegano": false,
-          "popular": false,
-          "imagen": "/images/menu/burrata.jpg",
-          "preparacion": "Nuestra burrata se importa semanalmente desde Italia"
-        }
-      ],
-      "pastas": [
-        {
-          "id": "p1",
-          "nombre": "Tagliatelle al Ragú",
-          "descripcion": "Pasta fresca con tradicional salsa boloñesa cocinada a fuego lento durante 6 horas",
-          "precio": "14.90",
-          "alergenos": ["gluten", "huevo", "apio"],
-          "vegetariano": false,
-          "vegano": false,
-          "popular": true,
-          "imagen": "/images/menu/tagliatelle_ragu.jpg",
-          "preparacion": "Nuestra pasta se elabora cada mañana en nuestra cocina",
-          "maridaje": "Recomendamos acompañar con un vino Chianti Classico"
-        },
-        {
-          "id": "p2",
-          "nombre": "Spaghetti alle Vongole",
-          "descripcion": "Espaguetis con almejas frescas, ajo, perejil y un toque de vino blanco",
-          "precio": "16.50",
-          "alergenos": ["gluten", "moluscos", "sulfitos"],
-          "vegetariano": false,
-          "vegano": false,
-          "popular": false,
-          "imagen": "/images/menu/spaghetti_vongole.jpg",
-          "preparacion": "Las almejas se seleccionan diariamente del mercado local",
-          "maridaje": "Perfecto con un Vermentino fresco"
-        }
-      ],
-      "pizzas": [
-        {
-          "id": "pz1",
-          "nombre": "Margherita D.O.C.",
-          "descripcion": "La clásica pizza napolitana con tomate San Marzano, mozzarella de búfala, albahaca fresca y aceite de oliva",
-          "precio": "12.00",
-          "alergenos": ["gluten", "lácteos"],
-          "vegetariano": true,
-          "vegano": false,
-          "popular": true,
-          "imagen": "/images/menu/margherita.jpg",
-          "preparacion": "Cocinada en horno de leña a 485°C durante 90 segundos",
-          "maridaje": "Combina perfectamente con una cerveza artesanal italiana"
-        }
-      ],
-      "postres": [
-        {
-          "id": "d1",
-          "nombre": "Tiramisú Casero",
-          "descripcion": "El auténtico postre italiano con bizcochos de soletilla, café, mascarpone y cacao",
-          "precio": "7.50",
-          "alergenos": ["gluten", "lácteos", "huevo"],
-          "vegetariano": true,
-          "vegano": false,
-          "popular": true,
-          "imagen": "/images/menu/tiramisu.jpg",
-          "preparacion": "Elaborado según la receta tradicional de la abuela del chef"
-        }
-      ],
-      "bebidas": [
-        {
-          "id": "b1",
-          "nombre": "Vino de la Casa - Montepulciano",
-          "descripcion": "Vino tinto italiano de cuerpo medio con notas de cereza y especias",
-          "precio": "18.00",
-          "tipo": "Botella",
-          "alergenos": ["sulfitos"],
-          "imagen": "/images/menu/montepulciano.jpg",
-          "origen": "Abruzzo, Italia"
-        }
+  "nombre": "La Parrilla Española",
+  "descripcion": "Restaurante especializado en carnes a la parrilla y platos tradicionales españoles.",
+  "horario": "Lunes a Domingo de 12:00 a 23:00",
+  "menu": [
+    {
+      "nombre": "Entrantes",
+      "platos": [
+        { "nombre": "Patatas bravas", "descripcion": "Patatas fritas con salsa picante", "precio": 5.5 },
+        { "nombre": "Croquetas de jamón", "descripcion": "Croquetas caseras de jamón ibérico", "precio": 6.0 },
+        { "nombre": "Tabla de quesos", "descripcion": "Selección de quesos españoles", "precio": 12.0 },
+        { "nombre": "Gambas al ajillo", "descripcion": "Gambas salteadas con ajo y guindilla", "precio": 9.5 }
       ]
     },
-    "especiales_del_dia": [
-      {
-        "id": "sp1",
-        "nombre": "Risotto ai Funghi Porcini",
-        "descripcion": "Risotto cremoso con setas porcini frescas de temporada, mantequilla y parmesano",
-        "precio": "18.90",
-        "alergenos": ["lácteos"],
-        "vegetariano": true,
-        "vegano": false,
-        "chef_notes": "Las setas porcini han sido recolectadas esta mañana en las montañas cercanas"
-      }
-    ],
-    "informacion_adicional": {
-      "metodos_pago": ["Efectivo", "Tarjeta de crédito", "Tarjeta de débito", "Móvil"],
-      "wifi": "Disponible - Contraseña: ItalianFood2023",
-      "accesibilidad": "El restaurante cuenta con acceso para sillas de ruedas y baño adaptado",
-      "mascotas": "Se permiten perros en la terraza exterior"
+    {
+      "nombre": "Carnes",
+      "platos": [
+        { "nombre": "Chuletón de buey", "descripcion": "Chuletón de buey madurado (500g)", "precio": 24.0 },
+        { "nombre": "Secreto ibérico", "descripcion": "Corte de cerdo ibérico a la parrilla", "precio": 18.5 },
+        { "nombre": "Entrecot", "descripcion": "Entrecot de ternera a la parrilla", "precio": 19.0 },
+        { "nombre": "Pollo a la parrilla", "descripcion": "Medio pollo marinado a la parrilla", "precio": 12.5 }
+      ]
+    },
+    {
+      "nombre": "Pescados",
+      "platos": [
+        { "nombre": "Lubina a la espalda", "descripcion": "Lubina a la parrilla con ajada", "precio": 18.0 },
+        {
+          "nombre": "Pulpo a la gallega",
+          "descripcion": "Pulpo cocido con pimentón y aceite de oliva",
+          "precio": 16.5
+        },
+        { "nombre": "Dorada al horno", "descripcion": "Dorada al horno con patatas y verduras", "precio": 17.0 }
+      ]
+    },
+    {
+      "nombre": "Postres",
+      "platos": [
+        { "nombre": "Flan casero", "descripcion": "Flan casero con caramelo", "precio": 4.5 },
+        { "nombre": "Tarta de Santiago", "descripcion": "Tarta tradicional de almendra", "precio": 5.0 },
+        { "nombre": "Crema catalana", "descripcion": "Crema catalana con azúcar caramelizado", "precio": 4.5 },
+        { "nombre": "Helado", "descripcion": "Dos bolas de helado a elegir", "precio": 4.0 }
+      ]
+    },
+    {
+      "nombre": "Bebidas",
+      "platos": [
+        { "nombre": "Agua mineral", "descripcion": "Botella de 50cl", "precio": 2.0 },
+        { "nombre": "Refresco", "descripcion": "Coca-Cola, Fanta, etc.", "precio": 2.5 },
+        { "nombre": "Cerveza", "descripcion": "Caña de cerveza", "precio": 2.5 },
+        { "nombre": "Vino de la casa", "descripcion": "Copa de vino tinto o blanco", "precio": 3.0 },
+        { "nombre": "Sangría", "descripcion": "Jarra de sangría (1L)", "precio": 12.0 }
+      ]
     }
-  }
+  ]
+}
+

@@ -6,7 +6,10 @@ import path from 'path'
 
 // ADVERTENCIA: Incluir API keys en el código es un riesgo de seguridad
 // Solo para desarrollo, nunca para producción
-const OPENAI_API_KEY = "";  // Reemplaza esto con tu API key real
+// const OPENAI_API_KEY = "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";  // Reemplaza esto con tu API key real
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+console.log(OPENAI_API_KEY);
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30
