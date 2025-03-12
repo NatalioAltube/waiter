@@ -5,7 +5,7 @@
 - **Simli Avatar**: La integración con Simli para mostrar y animar el avatar
 
 
-## ¿Por qué funcionó la solución simple y no la compleja?
+## Flujo del sistema
 
 1. **Arquitectura más directa**: Al pasar toda la información directamente a Simli, eliminamos múltiples puntos de fallo y complejidad innecesaria.
 2. **Capacidades integradas de Simli**: Simli ya tiene integradas las capacidades de:
