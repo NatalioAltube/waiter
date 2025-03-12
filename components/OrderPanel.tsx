@@ -57,5 +57,3 @@ const OrderPanel: React.FC<OrderPanelProps> = ({ orders, clientId }) => {
 
 export default OrderPanel
 
-
-

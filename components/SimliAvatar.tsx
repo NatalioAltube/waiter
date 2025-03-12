@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { getRestaurantPrompt, getRestaurantData } from "@/utils/restaurant-data"
-import OrderPanel from "./OrderPanel"
+import OrderPanel from "@/components/OrderPanel"
 
 const SimliAvatar = () => {
   const [roomUrl, setRoomUrl] = useState<string | null>(null)
@@ -11,16 +11,25 @@ const SimliAvatar = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [isSessionActive, setIsSessionActive] = useState(false)
   const [orders, setOrders] = useState<Array<{ item: string; quantity: number; price: number }>>([])
-  const [clientId] = useState(`client-${Date.now()}`)
+  // Usar una cadena estática para el ID inicial y actualizarla en el cliente
+  const [clientId, setClientId] = useState("client-pending")
   const [menuData, setMenuData] = useState<any>(null)
   const [lastUserMessage, setLastUserMessage] = useState("")
   const [lastBotMessage, setLastBotMessage] = useState("")
   const [debugText, setDebugText] = useState("")
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const autoProcessIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const conversationHistoryRef = useRef<Array<{ role: string; text: string }>>([])
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const menuDataRef = useRef<any>(null)
   const [messageLog, setMessageLog] = useState<string[]>([])
+  const [isClient, setIsClient] = useState(false)
+
+  // Generar el ID del cliente solo en el lado del cliente
+  useEffect(() => {
+    setIsClient(true)
+    setClientId(`client-${Date.now()}`)
+  }, [])
 
   // Función mejorada para detectar pedidos con mejor logging y detección
   const detectOrdersInText = (text: string) => {
@@ -132,7 +141,11 @@ const SimliAvatar = () => {
 
   // Procesamiento automático de mensajes cada 3 segundos
   const setupAutoProcessing = () => {
-    const autoProcessInterval = setInterval(() => {
+    if (autoProcessIntervalRef.current) {
+      clearInterval(autoProcessIntervalRef.current)
+    }
+
+    autoProcessIntervalRef.current = setInterval(() => {
       // Procesar tanto el último mensaje del usuario como la respuesta del bot
       if (lastUserMessage) {
         console.log("Auto-procesando mensaje del usuario:", lastUserMessage)
@@ -145,7 +158,11 @@ const SimliAvatar = () => {
       }
     }, 3000)
 
-    return () => clearInterval(autoProcessInterval)
+    return () => {
+      if (autoProcessIntervalRef.current) {
+        clearInterval(autoProcessIntervalRef.current)
+      }
+    }
   }
 
   const startSimliSession = async () => {
@@ -271,13 +288,6 @@ Esto es CRÍTICO para el funcionamiento del sistema.
       // Iniciar polling y procesamiento automático
       setupPolling()
       setupAutoProcessing()
-
-      // Añadir un plato de prueba para verificar que la comanda funciona
-      setTimeout(() => {
-        addOrderDirectly("Patatas bravas", 1, 5.5)
-        setDebugText("Añadido plato de prueba inicial: Patatas bravas")
-        setMessageLog((prev) => [...prev, "✅ Añadido plato de prueba: Patatas bravas"])
-      }, 2000)
     } catch (error) {
       console.error("❌ Error al iniciar la sesión de Simli:", error)
       setError(error instanceof Error ? error.message : "Error desconocido")
@@ -296,6 +306,15 @@ Esto es CRÍTICO para el funcionamiento del sistema.
     // Limpiar el historial de conversación
     conversationHistoryRef.current = []
     setMessageLog([])
+
+    // Limpiar intervalos
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+    }
+    if (autoProcessIntervalRef.current) {
+      clearInterval(autoProcessIntervalRef.current)
+    }
+
     console.log("Sesión de Simli finalizada")
   }
 
@@ -342,6 +361,10 @@ Esto es CRÍTICO para el funcionamiento del sistema.
 
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
+      }
+
+      if (autoProcessIntervalRef.current) {
+        clearInterval(autoProcessIntervalRef.current)
       }
     }
   }, [])
@@ -396,28 +419,34 @@ Esto es CRÍTICO para el funcionamiento del sistema.
 
       {/* Panel de pedidos */}
       <div className="w-1/4 h-full border-l border-gray-200 flex flex-col">
-        <OrderPanel orders={orders} clientId={clientId} />
+        {/* Solo renderizar el panel de pedidos en el cliente para evitar errores de hidratación */}
+        {isClient ? (
+          <>
+            <OrderPanel orders={orders} clientId={clientId} />
 
-        {/* Panel de depuración */}
-        <div className="h-1/3 border-t border-gray-200 p-2 overflow-auto bg-gray-50">
-          <h3 className="text-sm font-bold mb-1">Registro de mensajes:</h3>
-          <div className="text-xs">
-            {messageLog.map((msg, i) => (
-              <div key={i} className="mb-1">
-                {msg}
+            {/* Panel de depuración */}
+            <div className="h-1/3 border-t border-gray-200 p-2 overflow-auto bg-gray-50">
+              <h3 className="text-sm font-bold mb-1">Registro de mensajes:</h3>
+              <div className="text-xs">
+                {messageLog.map((msg, i) => (
+                  <div key={i} className="mb-1">
+                    {msg}
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          </>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="text-gray-400">Cargando panel de pedidos...</div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )
 }
 
 export default SimliAvatar
-
-
-
 
 
 //----------------------------------------------------------------------------

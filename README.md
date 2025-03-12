@@ -104,3 +104,40 @@ Si quieres reducir costos, podrías:
 2. Limitar la longitud de las respuestas
 3. Implementar un sistema de caché para respuestas comunes
 
+--------------------------------------------------------------------
+
+Thought for 2 secondsTienes toda la razón, me equivoqué en la lista. Vamos a corregirla basándonos en lo que realmente estamos utilizando en el proyecto actual:
+
+### Lista corregida de archivos necesarios para el proyecto final:
+
+### Componentes principales
+
+1. `components/SimliAvatar.tsx` - Componente principal que maneja la interfaz del avatar y la detección de pedidos
+2. `components/OrderPanel.tsx` - Componente para mostrar la comanda actual
+3. `components/ManualOrderForm.tsx` - (Opcional) Componente para añadir pedidos manualmente
+
+
+### Utilidades
+
+4. `utils/restaurant-data.ts` - Funciones para cargar y formatear los datos del restaurante
+
+
+### API Routes
+
+5. `app/api/restaurant-data/route.ts` - Endpoint para obtener los datos del restaurante
+
+
+### Datos
+
+6. `public/data/restaurant-data.json` - Datos del menú del restaurante
+
+
+### Páginas
+
+7. `app/page.tsx` - Página principal que renderiza el componente SimliAvatar
+
+
+### Configuración
+
+8. `.env.local` - Archivo de variables de entorno (debe contener NEXT_PUBLIC_SIMLI_API_KEY)
+
