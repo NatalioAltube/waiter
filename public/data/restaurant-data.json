@@ -1,57 +1,128 @@
 {
-  "nombre": "De Puta Madre",
-  "descripcion": "Restaurante especializado en carnes a la parrilla y platos tradicionales españoles.",
-  "horario": "Lunes a Domingo de 12:00 a 23:00",
+  "nombre": "EBAL Restaurant",
+  "descripcion": "Restaurante con variedad de platos principales, postres y bebidas. Especializado en cocina internacional y sabores únicos.",
+  "horario": "Abierto todos los días de 12:00 pm - 8:00 pm",
+  "ubicacion": "123 Anywhere St., Any City, ST 12345",
+  "telefono": "+123-456-7890",
+  "redes_sociales": "@ebalresto",
   "menu": [
     {
-      "nombre": "Entrantes",
+      "nombre": "Platos principales",
       "platos": [
-        { "nombre": "Patatas bravas", "descripcion": "Patatas fritas con salsa picante", "precio": 5.5 },
-        { "nombre": "Croquetas de jamón", "descripcion": "Croquetas caseras de jamón ibérico", "precio": 6.0 },
-        { "nombre": "Tabla de quesos", "descripcion": "Selección de quesos españoles", "precio": 12.0 },
-        { "nombre": "Gambas al ajillo", "descripcion": "Gambas salteadas con ajo y guindilla", "precio": 9.5 }
-      ]
-    },
-    {
-      "nombre": "Carnes",
-      "platos": [
-        { "nombre": "Chuletón de buey", "descripcion": "Chuletón de buey madurado (500g)", "precio": 24.0 },
-        { "nombre": "Secreto ibérico", "descripcion": "Corte de cerdo ibérico a la parrilla", "precio": 18.5 },
-        { "nombre": "Entrecot", "descripcion": "Entrecot de ternera a la parrilla", "precio": 19.0 },
-        { "nombre": "Pollo a la parrilla", "descripcion": "Medio pollo marinado a la parrilla", "precio": 12.5 }
-      ]
-    },
-    {
-      "nombre": "Pescados",
-      "platos": [
-        { "nombre": "Lubina a la espalda", "descripcion": "Lubina a la parrilla con ajada", "precio": 18.0 },
         {
-          "nombre": "Pulpo a la gallega",
-          "descripcion": "Pulpo cocido con pimentón y aceite de oliva",
-          "precio": 16.5
+          "nombre": "Pollo a la Piccata",
+          "descripcion": "Pechugas de pollo de corral salteadas en salsa de vino blanco seco, jugo de limón natural y alcaparras encurtidas. Servido con puré de patatas al ajo y espárragos verdes al vapor.",
+          "precio": 18.50,
+          "alergenos": [
+            "Sulfitos: presente en el vino blanco",
+            "Lácteos: mantequilla en la salsa",
+            "Puede contener trazas de frutos secos en el puré de patatas"
+          ]
         },
-        { "nombre": "Dorada al horno", "descripcion": "Dorada al horno con patatas y verduras", "precio": 17.0 }
+        {
+          "nombre": "Salmón a la Parrilla",
+          "descripcion": "Filete de salmón fresco sazonado con sal y pimienta, cocinado a la parrilla y servido con salsa de mantequilla de limón. Acompañado de verduras asadas (pimientos, calabacín, berenjena) y pilaf de arroz.",
+          "precio": 22.00,
+          "alergenos": [
+            "Pescado: salmón",
+            "Lácteos: mantequilla en la salsa",
+            "Puede contener trazas de gluten en el arroz pilaf"
+          ]
+        },
+        {
+          "nombre": "Solomillo de Ternera",
+          "descripcion": "Solomillo de ternera de primera calidad, marinado con hierbas frescas y especias, cocinado a la parrilla y servido con chutney de manzana dulce y ácida. Incluye boniato asado y judías verdes al vapor.",
+          "precio": 28.00,
+          "alergenos": [
+            "No contiene alérgenos principales",
+            "Puede contener trazas de sulfitos en el chutney de manzana"
+          ]
+        },
+        {
+          "nombre": "Risotto de Setas",
+          "descripcion": "Arroz Arborio cocinado lentamente con caldo de verduras, champiñones laminados y cebolla caramelizada. Enriquecido con queso parmesano y mantequilla, coronado con perejil fresco.",
+          "precio": 16.50,
+          "alergenos": [
+            "Lácteos: queso parmesano y mantequilla",
+            "Puede contener trazas de gluten si se usa caldo comercial"
+          ]
+        }
       ]
     },
     {
       "nombre": "Postres",
       "platos": [
-        { "nombre": "Flan casero", "descripcion": "Flan casero con caramelo", "precio": 4.5 },
-        { "nombre": "Tarta de Santiago", "descripcion": "Tarta tradicional de almendra", "precio": 5.0 },
-        { "nombre": "Crema catalana", "descripcion": "Crema catalana con azúcar caramelizado", "precio": 4.5 },
-        { "nombre": "Helado", "descripcion": "Dos bolas de helado a elegir", "precio": 4.0 }
+        {
+          "nombre": "Volcán de Chocolate",
+          "descripcion": "Bizcocho de chocolate con centro fundido de chocolate caliente, elaborado con cacao puro, mantequilla, huevos y azúcar. Textura crujiente por fuera y cremosa por dentro.",
+          "precio": 7.00,
+          "alergenos": [
+            "Gluten: harina en la masa",
+            "Lácteos: mantequilla",
+            "Huevos: presentes en la preparación"
+          ]
+        },
+        {
+          "nombre": "Crema Catalana",
+          "descripcion": "Postre tradicional a base de crema pastelera aromatizada con canela y cítricos, cubierta con una fina capa de azúcar caramelizado.",
+          "precio": 6.50,
+          "alergenos": [
+            "Lácteos: leche y nata",
+            "Huevos: presentes en la crema"
+          ]
+        },
+        {
+          "nombre": "Tiramisú",
+          "descripcion": "Postre italiano con capas de bizcochos de soletilla empapados en café expreso y crema de mascarpone, decorado con cacao en polvo.",
+          "precio": 8.00,
+          "alergenos": [
+            "Gluten: bizcochos de soletilla",
+            "Lácteos: queso mascarpone y nata",
+            "Huevos: en la crema de mascarpone"
+          ]
+        },
+        {
+          "nombre": "Tarta de Queso",
+          "descripcion": "Tarta cremosa horneada con una base de galleta triturada, queso crema, nata, mantequilla y un toque de vainilla. Puede llevar cobertura de frutos rojos.",
+          "precio": 7.50,
+          "alergenos": [
+            "Gluten: base de galleta",
+            "Lácteos: queso crema, nata y mantequilla",
+            "Huevos: en la mezcla de queso"
+          ]
+        }
       ]
     },
     {
       "nombre": "Bebidas",
       "platos": [
-        { "nombre": "Agua mineral", "descripcion": "Botella de 50cl", "precio": 2.0 },
-        { "nombre": "Refresco", "descripcion": "Coca-Cola, Fanta, etc.", "precio": 2.5 },
-        { "nombre": "Cerveza", "descripcion": "Caña de cerveza", "precio": 2.5 },
-        { "nombre": "Vino de la casa", "descripcion": "Copa de vino tinto o blanco", "precio": 3.0 },
-        { "nombre": "Sangría", "descripcion": "Jarra de sangría (1L)", "precio": 12.0 }
+        {
+          "nombre": "Café",
+          "descripcion": "Espresso, cortado, con leche o americano. Preparado con granos de café de origen seleccionado.",
+          "precio": 2.00,
+          "alergenos": [
+            "No contiene alérgenos"
+          ]
+        },
+        {
+          "nombre": "Soda",
+          "descripcion": "Refrescos de cola, limón, naranja y agua con gas.",
+          "precio": 3.00,
+          "alergenos": [
+            "Puede contener sulfitos en algunas variedades"
+          ]
+        },
+        {
+          "nombre": "Jugo natural",
+          "descripcion": "Zumo recién exprimido de naranja, manzana o zanahoria.",
+          "precio": 4.00,
+          "alergenos": [
+            "No contiene alérgenos"
+          ]
+        }
       ]
     }
   ]
 }
+
 

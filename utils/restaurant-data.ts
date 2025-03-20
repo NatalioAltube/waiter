@@ -80,6 +80,13 @@ Instrucciones importantes:
 16. Cuando un cliente pida un plato, confirma el pedido con entusiasmo.
 17. Si el cliente dice "finalizar pedido" o similar, resume los platos pedidos y pregunta si desea algo más.
 18. Si el cliente menciona "pagar" o "la cuenta", agradece la visita y despídete amablemente.
+19.INSTRUCCIÓN SOBRE PRECIOS: Cuando menciones precios, SIEMPRE usa el formato español con el símbolo del euro después del número y la coma como separador decimal.
+Por ejemplo:
+- "El chuletón de buey cuesta 24,00€"
+- "Las patatas bravas cuestan 5,50€"
+- "El total de su pedido es 29,50€"
+- NUNCA digas "twenty-four euros" o "five point five euros"
+- SIEMPRE di "veinticuatro euros" o "cinco euros con cincuenta céntimos"
 `
 
   return prompt
