@@ -25,7 +25,7 @@ const BACKUP_DATA = {
           ]
         },
         {
-          "nombre": "Salmón a la Parrilla",
+          "nombre": "Salmón",
           "descripcion": "Filete de salmón fresco sazonado con sal y pimienta, cocinado a la parrilla y servido con salsa de mantequilla de limón. Acompañado de verduras asadas (pimientos, calabacín, berenjena) y pilaf de arroz.",
           "precio": 22.00,
           "alergenos": [
@@ -35,7 +35,7 @@ const BACKUP_DATA = {
           ]
         },
         {
-          "nombre": "Solomillo de Ternera",
+          "nombre": "Solomillo",
           "descripcion": "Solomillo de ternera de primera calidad, marinado con hierbas frescas y especias, cocinado a la parrilla y servido con chutney de manzana dulce y ácida. Incluye boniato asado y judías verdes al vapor.",
           "precio": 28.00,
           "alergenos": [
@@ -44,7 +44,7 @@ const BACKUP_DATA = {
           ]
         },
         {
-          "nombre": "Risotto de Setas",
+          "nombre": "Risotto",
           "descripcion": "Arroz Arborio cocinado lentamente con caldo de verduras, champiñones laminados y cebolla caramelizada. Enriquecido con queso parmesano y mantequilla, coronado con perejil fresco.",
           "precio": 16.50,
           "alergenos": [
@@ -110,15 +110,7 @@ const BACKUP_DATA = {
           ]
         },
         {
-          "nombre": "Té",
-          "descripcion": "Variedad de tés disponibles: negro, verde, rojo e infusiones de hierbas.",
-          "precio": 2.50,
-          "alergenos": [
-            "No contiene alérgenos"
-          ]
-        },
-        {
-          "nombre": "Soda",
+          "nombre": "Coca-Cola",
           "descripcion": "Refrescos de cola, limón, naranja y agua con gas.",
           "precio": 3.00,
           "alergenos": [

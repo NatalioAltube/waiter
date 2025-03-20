@@ -10,17 +10,7 @@
       "nombre": "Platos principales",
       "platos": [
         {
-          "nombre": "Pollo a la Piccata",
-          "descripcion": "Pechugas de pollo de corral salteadas en salsa de vino blanco seco, jugo de limón natural y alcaparras encurtidas. Servido con puré de patatas al ajo y espárragos verdes al vapor.",
-          "precio": 18.50,
-          "alergenos": [
-            "Sulfitos: presente en el vino blanco",
-            "Lácteos: mantequilla en la salsa",
-            "Puede contener trazas de frutos secos en el puré de patatas"
-          ]
-        },
-        {
-          "nombre": "Salmón a la Parrilla",
+          "nombre": "Salmón",
           "descripcion": "Filete de salmón fresco sazonado con sal y pimienta, cocinado a la parrilla y servido con salsa de mantequilla de limón. Acompañado de verduras asadas (pimientos, calabacín, berenjena) y pilaf de arroz.",
           "precio": 22.00,
           "alergenos": [
@@ -30,7 +20,7 @@
           ]
         },
         {
-          "nombre": "Solomillo de Ternera",
+          "nombre": "Solomillo",
           "descripcion": "Solomillo de ternera de primera calidad, marinado con hierbas frescas y especias, cocinado a la parrilla y servido con chutney de manzana dulce y ácida. Incluye boniato asado y judías verdes al vapor.",
           "precio": 28.00,
           "alergenos": [
@@ -39,7 +29,7 @@
           ]
         },
         {
-          "nombre": "Risotto de Setas",
+          "nombre": "Paella",
           "descripcion": "Arroz Arborio cocinado lentamente con caldo de verduras, champiñones laminados y cebolla caramelizada. Enriquecido con queso parmesano y mantequilla, coronado con perejil fresco.",
           "precio": 16.50,
           "alergenos": [
@@ -72,16 +62,6 @@
           ]
         },
         {
-          "nombre": "Tiramisú",
-          "descripcion": "Postre italiano con capas de bizcochos de soletilla empapados en café expreso y crema de mascarpone, decorado con cacao en polvo.",
-          "precio": 8.00,
-          "alergenos": [
-            "Gluten: bizcochos de soletilla",
-            "Lácteos: queso mascarpone y nata",
-            "Huevos: en la crema de mascarpone"
-          ]
-        },
-        {
           "nombre": "Tarta de Queso",
           "descripcion": "Tarta cremosa horneada con una base de galleta triturada, queso crema, nata, mantequilla y un toque de vainilla. Puede llevar cobertura de frutos rojos.",
           "precio": 7.50,
@@ -97,7 +77,7 @@
       "nombre": "Bebidas",
       "platos": [
         {
-          "nombre": "Café",
+          "nombre": "Café Solo",
           "descripcion": "Espresso, cortado, con leche o americano. Preparado con granos de café de origen seleccionado.",
           "precio": 2.00,
           "alergenos": [
@@ -105,19 +85,43 @@
           ]
         },
         {
-          "nombre": "Soda",
-          "descripcion": "Refrescos de cola, limón, naranja y agua con gas.",
+          "nombre": "Café Cortado",
+          "descripcion": "Espresso, cortado, con leche o americano. Preparado con granos de café de origen seleccionado.",
+          "precio": 2.00,
+          "alergenos": [
+            "No contiene alérgenos"
+          ]
+        },
+        {
+          "nombre": "Coca-Cola",
+          "descripcion": "Refrescos de cola",
           "precio": 3.00,
           "alergenos": [
             "Puede contener sulfitos en algunas variedades"
           ]
         },
         {
-          "nombre": "Jugo natural",
-          "descripcion": "Zumo recién exprimido de naranja, manzana o zanahoria.",
-          "precio": 4.00,
+          "nombre": "Naranjada",
+          "descripcion": "Refrescos de cola gas",
+          "precio": 3.00,
           "alergenos": [
-            "No contiene alérgenos"
+            "Puede contener sulfitos en algunas variedades"
+          ]
+        },
+        {
+          "nombre": "Cerveza",
+          "descripcion": "",
+          "precio": 3.00,
+          "alergenos": [
+            "Puede contener sulfitos en algunas variedades"
+          ]
+        },
+        {
+          "nombre": "Agua",
+          "descripcion": "Agua mineralizada. Fresca o al natural",
+          "precio": 3.00,
+          "alergenos": [
+            "Puede contener sulfitos en algunas variedades"
           ]
         }
       ]
