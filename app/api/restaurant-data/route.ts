@@ -5,51 +5,75 @@ import path from "path"
 // Datos de respaldo en caso de error
 const BACKUP_DATA = {
   "nombre": "EBAL Restaurant",
-  "descripcion": "Restaurante con variedad de platos principales, postres y bebidas. Especializado en cocina internacional y sabores únicos.",
+  "descripcion": "Restaurante con variedad de platos principales, entrantes, postres y bebidas. Especializado en cocina internacional y sabores únicos.",
   "horario": "Abierto todos los días de 12:00 pm - 8:00 pm",
   "ubicacion": "123 Anywhere St., Any City, ST 12345",
   "telefono": "+123-456-7890",
   "redes_sociales": "@ebalresto",
   "menu": [
     {
-      "nombre": "Platos principales",
+      "nombre": "Entrantes",
       "platos": [
         {
-          "nombre": "Pollo a la Piccata",
-          "descripcion": "Pechugas de pollo de corral salteadas en salsa de vino blanco seco, jugo de limón natural y alcaparras encurtidas. Servido con puré de patatas al ajo y espárragos verdes al vapor.",
-          "precio": 18.50,
+          "nombre": "Tosta",
+          "descripcion": "Rebanada de pan rústico de masa madre, tostado hasta quedar crujiente, cubierto con tomates cherry en dados, ajo finamente picado, albahaca fresca y un toque de aceite de oliva virgen extra. Se adereza con sal marina y pimienta negra recién molida.",
+          "precio": 5.00,
           "alergenos": [
-            "Sulfitos: presente en el vino blanco",
-            "Lácteos: mantequilla en la salsa",
-            "Puede contener trazas de frutos secos en el puré de patatas"
+            "Gluten (presente en el pan)",
+            "Puede contener trazas de frutos secos"
           ]
         },
         {
-          "nombre": "Salmón",
-          "descripcion": "Filete de salmón fresco sazonado con sal y pimienta, cocinado a la parrilla y servido con salsa de mantequilla de limón. Acompañado de verduras asadas (pimientos, calabacín, berenjena) y pilaf de arroz.",
-          "precio": 22.00,
+          "nombre": "Queso",
+          "descripcion": "Pequeños bocados de queso de cabra cremoso, envueltos en una fina capa de masa filo horneada hasta quedar dorada y crujiente. Se sirven con un toque de miel de romero y nueces caramelizadas.",
+          "precio": 6.50,
           "alergenos": [
-            "Pescado: salmón",
-            "Lácteos: mantequilla en la salsa",
-            "Puede contener trazas de gluten en el arroz pilaf"
+            "Lácteos (queso de cabra)",
+            "Gluten (masa filo)",
+            "Frutos secos (nueces caramelizadas)"
+          ]
+        },
+        {
+          "nombre": "Gambas",
+          "descripcion": "Gambas frescas, peladas y salteadas en una mezcla de ajo picado, jugo de limón natural y mantequilla. Se sirven con pan crujiente para mojar en la salsa.",
+          "precio": 8.00,
+          "alergenos": [
+            "Mariscos (gambas)",
+            "Lácteos (mantequilla)",
+            "Gluten (pan de acompañamiento)"
+          ]
+        }
+      ]
+    },
+    {
+      "nombre": "Platos principales",
+      "platos": [
+        {
+          "nombre": "Salmón",
+          "descripcion": "Filete de salmón fresco, sazonado con sal y pimienta, cocinado a la parrilla hasta obtener un dorado perfecto. Se sirve con salsa de mantequilla de limón, verduras asadas (pimientos, calabacín y berenjena) y arroz aromático infusionado con hierbas.",
+          "precio": 12.00,
+          "alergenos": [
+            "Pescado (salmón)",
+            "Lácteos (mantequilla en la salsa)",
+            "Puede contener trazas de gluten en el arroz"
           ]
         },
         {
           "nombre": "Solomillo",
-          "descripcion": "Solomillo de ternera de primera calidad, marinado con hierbas frescas y especias, cocinado a la parrilla y servido con chutney de manzana dulce y ácida. Incluye boniato asado y judías verdes al vapor.",
-          "precio": 28.00,
+          "descripcion": "Solomillo de ternera de primera calidad, marinado con una mezcla de especias y hierbas frescas, cocinado a la parrilla y servido con compota de manzana dulce y ácida. Acompañado de boniato asado y judías verdes al vapor.",
+          "precio": 14.00,
           "alergenos": [
             "No contiene alérgenos principales",
-            "Puede contener trazas de sulfitos en el chutney de manzana"
+            "Puede contener trazas de sulfitos en la compota de manzana"
           ]
         },
         {
-          "nombre": "Risotto",
-          "descripcion": "Arroz Arborio cocinado lentamente con caldo de verduras, champiñones laminados y cebolla caramelizada. Enriquecido con queso parmesano y mantequilla, coronado con perejil fresco.",
+          "nombre": "Paella",
+          "descripcion": "Versión tradicional elaborada con arroz de grano corto, pollo, conejo, judía verde (bajoqueta), garrofón, tomate, aceite de oliva virgen extra y caldo de ave. Sazonada con pimentón, azafrán y romero, cocinada a fuego lento en paellera hasta obtener el característico 'socarrat'.",
           "precio": 16.50,
           "alergenos": [
-            "Lácteos: queso parmesano y mantequilla",
-            "Puede contener trazas de gluten si se usa caldo comercial"
+            "Puede contener trazas de gluten en el caldo comercial",
+            "Sulfitos en el vino usado para el sofrito"
           ]
         }
       ]
@@ -59,41 +83,31 @@ const BACKUP_DATA = {
       "platos": [
         {
           "nombre": "Volcán de Chocolate",
-          "descripcion": "Bizcocho de chocolate con centro fundido de chocolate caliente, elaborado con cacao puro, mantequilla, huevos y azúcar. Textura crujiente por fuera y cremosa por dentro.",
-          "precio": 7.00,
+          "descripcion": "Bizcocho de chocolate con un centro fundido de chocolate caliente, elaborado con cacao puro, mantequilla, huevos frescos y azúcar. Se hornea hasta lograr una textura crujiente por fuera y cremosa por dentro.",
+          "precio": 5.00,
           "alergenos": [
-            "Gluten: harina en la masa",
-            "Lácteos: mantequilla",
-            "Huevos: presentes en la preparación"
+            "Gluten (harina en la masa)",
+            "Lácteos (mantequilla)",
+            "Huevos"
           ]
         },
         {
           "nombre": "Crema Catalana",
-          "descripcion": "Postre tradicional a base de crema pastelera aromatizada con canela y cítricos, cubierta con una fina capa de azúcar caramelizado.",
+          "descripcion": "Postre tradicional a base de crema pastelera aromatizada con canela y piel de cítricos, cubierta con una fina capa de azúcar caramelizado mediante soplete.",
           "precio": 6.50,
           "alergenos": [
-            "Lácteos: leche y nata",
-            "Huevos: presentes en la crema"
+            "Lácteos (leche y nata)",
+            "Huevos"
           ]
         },
         {
-          "nombre": "Tiramisú",
-          "descripcion": "Postre italiano con capas de bizcochos de soletilla empapados en café expreso y crema de mascarpone, decorado con cacao en polvo.",
-          "precio": 8.00,
+          "nombre": "Tarta de Frutos Rojos",
+          "descripcion": "Tarta cremosa de frutos rojos horneada con una base de galleta triturada y un toque de vainilla.",
+          "precio": 5.50,
           "alergenos": [
-            "Gluten: bizcochos de soletilla",
-            "Lácteos: queso mascarpone y nata",
-            "Huevos: en la crema de mascarpone"
-          ]
-        },
-        {
-          "nombre": "Tarta de Queso",
-          "descripcion": "Tarta cremosa horneada con una base de galleta triturada, queso crema, nata, mantequilla y un toque de vainilla. Puede llevar cobertura de frutos rojos.",
-          "precio": 7.50,
-          "alergenos": [
-            "Gluten: base de galleta",
-            "Lácteos: queso crema, nata y mantequilla",
-            "Huevos: en la mezcla de queso"
+            "Gluten (base de galleta)",
+            "Lácteos (queso crema, nata y mantequilla)",
+            "Huevos"
           ]
         }
       ]
@@ -103,7 +117,7 @@ const BACKUP_DATA = {
       "platos": [
         {
           "nombre": "Café",
-          "descripcion": "Espresso, cortado, con leche o americano. Preparado con granos de café de origen seleccionado.",
+          "descripcion": "Preparado con granos de café de origen seleccionado.",
           "precio": 2.00,
           "alergenos": [
             "No contiene alérgenos"
@@ -111,16 +125,24 @@ const BACKUP_DATA = {
         },
         {
           "nombre": "Coca-Cola",
-          "descripcion": "Refrescos de cola, limón, naranja y agua con gas.",
+          "descripcion": "Bebida gaseosa de cola.",
           "precio": 3.00,
           "alergenos": [
             "Puede contener sulfitos en algunas variedades"
           ]
         },
         {
-          "nombre": "Jugo natural",
-          "descripcion": "Zumo recién exprimido de naranja, manzana o zanahoria.",
-          "precio": 4.00,
+          "nombre": "Cerveza",
+          "descripcion": "Cerveza.",
+          "precio": 3.00,
+          "alergenos": [
+            "Gluten (presente en la cebada y el trigo en algunas variedades)"
+          ]
+        },
+        {
+          "nombre": "Agua",
+          "descripcion": "Agua mineralizada, fresca o al natural.",
+          "precio": 3.00,
           "alergenos": [
             "No contiene alérgenos"
           ]
