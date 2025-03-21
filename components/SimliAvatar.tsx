@@ -86,8 +86,6 @@ const captureAudioAndTranscribe = async () => {
       return volume > 10;
     };
 
-
-
   const waitForSpeech = () =>
       new Promise<void>((resolve) => {
         const interval = setInterval(() => {
@@ -196,36 +194,6 @@ const captureAudioAndTranscribe = async () => {
         return updatedOrders;
     });
 };
-
-//   const removeOrder = (itemName: string) => {
-//     setOrders((prevOrders) => {
-//         const updatedOrders = prevOrders.filter(order => order.item !== itemName);
-
-//         console.log(`🗑 Pedido eliminado: ${itemName}`);
-//         return updatedOrders;
-//     });
-//   };
-
-//   const addOrder = (itemName: string, quantity = 1, price = 0) => {
-//     setOrders((prevOrders) => {
-//         const updatedOrders = [...prevOrders];
-//         const existingOrderIndex = updatedOrders.findIndex((order) => order.item.toLowerCase() === itemName.toLowerCase());
-
-//         if (existingOrderIndex >= 0) {
-//             updatedOrders[existingOrderIndex] = {
-//                 ...updatedOrders[existingOrderIndex],
-//                 quantity: updatedOrders[existingOrderIndex].quantity + quantity,
-//             };
-//             console.log("🔄 Pedido actualizado:", updatedOrders[existingOrderIndex]);
-//         } else {
-//             updatedOrders.push({ item: itemName, quantity, price });
-//             console.log("➕ Nuevo pedido añadido:", { item: itemName, quantity, price });
-//         }
-
-//         return updatedOrders;
-//     });
-// };
-
 
   // 📌 Detectar platos en el texto transcrito
   const detectOrdersInText = (text: string) => {
@@ -446,7 +414,7 @@ Esto es CRÍTICO para el funcionamiento del sistema.
         body: JSON.stringify({
           apiKey: process.env.NEXT_PUBLIC_SIMLI_API_KEY,
           faceId: "bec78a8e-8bc2-4b51-bfc0-fd6ce5b30548", //13c29695-3b4e-4ee8-b12d-fcab81a50ea5
-          voiceId: "5c29d7e3-a133-4c7e-804a-1d9c6dea83f6", //a956b555-5c82-404f-9580-243b5178978d
+          voiceId: "d4db5fb9-f44b-4bd1-85fa-192e0f0d75f9", //5c29d7e3-a133-4c7e-804a-1d9c6dea83f6
           language: "es",
           systemPrompt: enhancedPrompt,
           maxSessionLength: 3600,
@@ -555,42 +523,43 @@ Esto es CRÍTICO para el funcionamiento del sistema.
     }
   }
 
-  const endSimliSession = () => {
-    console.log("🔴 Finalizando sesión de Simli...");
-    
-    setIsSessionActive(false);
-    setRoomUrl(null);
+const endSimliSession = () => {
+  console.log("🔴 Finalizando sesión de Simli...");
+  
+  //isRecordingActive = false; // 🔴 ⛔ Desactivar grabación para detener bucles
+  setIsSessionActive(false);
+  setRoomUrl(null);
 
-    console.log("📋 Comanda finalizada:", orders);
-    setOrders([]); // Resetear la comanda
+  console.log("📋 Comanda finalizada:", orders);
+  setOrders([]); // Resetear la comanda
 
-    conversationHistoryRef.current = [];
-    setMessageLog([]);
+  conversationHistoryRef.current = [];
+  setMessageLog([]);
 
-    // 🚨 🔴 Asegurar que se detiene la grabación paralela
-    if (mediaRecorderRef.current) {
-        if (mediaRecorderRef.current.state !== "inactive") {
-            console.log("🛑 Deteniendo grabación paralela...");
-            mediaRecorderRef.current.stop();
-        }
-        mediaRecorderRef.current = null;
-    }
+  // 🚨 🔴 Asegurar que se detiene la grabación paralela
+  if (mediaRecorderRef.current) {
+      if (mediaRecorderRef.current.state !== "inactive") {
+          console.log("🛑 Deteniendo grabación paralela...");
+          mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+  }
 
-    // 🚨 🔴 Detener y limpiar el stream de audio
-    if (audioStreamRef.current) {
-        console.log("🔇 Cerrando stream de audio...");
-        audioStreamRef.current.getTracks().forEach(track => track.stop());
-        audioStreamRef.current = null;
-    }
+  // 🚨 🔴 Detener y limpiar el stream de audio
+  if (audioStreamRef.current) {
+      console.log("🔇 Cerrando stream de audio...");
+      audioStreamRef.current.getTracks().forEach(track => track.stop());
+      audioStreamRef.current = null;
+  }
 
-    if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-    }
-    if (autoProcessIntervalRef.current) {
-        clearInterval(autoProcessIntervalRef.current);
-    }
+  if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+  }
+  if (autoProcessIntervalRef.current) {
+      clearInterval(autoProcessIntervalRef.current);
+  }
 
-    console.log("✅ Sesión de Simli finalizada y grabación detenida.");
+  console.log("✅ Sesión de Simli finalizada y grabación detenida.");
 };
 
   // Función para añadir pedidos directamente - mejorada con más logs
