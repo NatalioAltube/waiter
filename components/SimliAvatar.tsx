@@ -1,11 +1,11 @@
 // ULTIMA VERSION QUE FUNCIONA 17/03
 //----------------------------------------------------------------
 "use client"
-
+ 
 import { useEffect, useRef, useState } from "react"
 import { getRestaurantPrompt, getRestaurantData } from "@/utils/restaurant-data"
 import OrderPanel from "@/components/OrderPanel"
-
+ 
 const SimliAvatar = () => {
   const [roomUrl, setRoomUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -27,40 +27,45 @@ const SimliAvatar = () => {
   const [messageLog, setMessageLog] = useState<string[]>([])
   const [isClient, setIsClient] = useState(false)
   const [windowMessageListenerSetup, setWindowMessageListenerSetup] = useState(false)
-
+ 
+const isRecordingActive = useRef(true);
 const processTranscribedAudio = async (audioFile: File) => {
   try {
     const formData = new FormData();
     formData.append("file", audioFile);
     formData.append("model", "whisper-1");
     formData.append("language", "es"); // 🔥 Forzar idioma español
-
+ 
     const response = await fetch("/api/transcribe", {
       method: "POST",
       body: formData,
     });
-
+ 
     const data = await response.json();
     let transcribedText = data.text.trim();
-
+ 
     // 🚨 Antes filtrábamos frases cortas o irrelevantes, ahora las procesamos todas
     if (!transcribedText) {
       console.warn("⚠️ Transcripción vacía, ignorada.");
       return;
     }
-
+ 
     console.log("✅ Texto transcrito:", transcribedText);
-
+ 
     // 🔥 Ahora enviamos TODO el texto para que `detectOrdersInText()` haga la validación
     detectOrdersInText(transcribedText);
-
+ 
   } catch (error) {
     console.error("Error procesando audio transcrito:", error);
   }
 };
-
+ 
 // 🎙️ Capturar audio y enviarlo a transcribir de forma continua
 const captureAudioAndTranscribe = async () => {
+  if (!isRecordingActive.current) {
+    console.warn("⛔ Grabación cancelada porque la sesión está inactiva.");
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -70,22 +75,22 @@ const captureAudioAndTranscribe = async () => {
         channelCount: 1,
       },
     });
-
+ 
     const audioContext = new AudioContext();
     const source = audioContext.createMediaStreamSource(stream);
     const analyser = audioContext.createAnalyser();
     source.connect(analyser);
-
+ 
     const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     const audioChunks: Blob[] = [];
-
+ 
     const detectSound = () => {
       const buffer = new Uint8Array(analyser.fftSize);
       analyser.getByteTimeDomainData(buffer);
       const volume = buffer.reduce((acc, val) => acc + Math.abs(val - 128), 0) / buffer.length;
       return volume > 10;
     };
-
+ 
   const waitForSpeech = () =>
       new Promise<void>((resolve) => {
         const interval = setInterval(() => {
@@ -96,75 +101,78 @@ const captureAudioAndTranscribe = async () => {
           }
         }, 100);
       });
-
+ 
     console.log("🟢 Esperando a que comiences a hablar...");
     await waitForSpeech();
-
+ 
     mediaRecorder.start();
-
+ 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunks.push(event.data);
       }
     };
-
+ 
     mediaRecorder.onstop = async () => {
       const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
       const audioFile = new File([audioBlob], "audio.webm");
-
+ 
       console.log("🎙️ Audio capturado, enviando a transcripción...");
       await processTranscribedAudio(audioFile);
-
-      // 🔄 Reiniciar la captura para permitir múltiples pedidos
-      captureAudioAndTranscribe();
+ 
+      if (isRecordingActive.current) {
+        captureAudioAndTranscribe();
+      } else {
+        console.log("⛔ Grabación finalizada.");
+      }
     };
-
+ 
     // Detener grabación si hay silencio prolongado
     setTimeout(() => {
       console.log("🛑 Silencio detectado, deteniendo grabación...");
       mediaRecorder.stop();
       audioContext.close();
     }, 5000);
-
+ 
   } catch (error) {
     console.error("Error capturando audio:", error);
   }
 };
-
+ 
   // 🔹 Crear referencias para la grabación de audio
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
-
+ 
   // Generar el ID del cliente solo en el lado del cliente
   useEffect(() => {
     setIsClient(true);
-    setClientId(`client-${Date.now()}`); 
+    setClientId(`client-${Date.now()}`);
   }, []);
-
+ 
   // Verificar que el menú está cargado correctamente
   useEffect(() => {
     console.log("📋 Datos del menú cargados:", menuDataRef.current)
   }, [menuDataRef.current])
-
+ 
   // Verificar el estado final de la comanda
   useEffect(() => {
     console.log("✅ Estado final de la comanda:", orders)
   }, [orders])
-
+ 
   useEffect(() => {
     if (!isSessionActive) {
       console.log("🛑 Sesión finalizada. Deteniendo grabación paralela...");
-  
+ 
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
-  
+ 
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
       }
     }
   }, [isSessionActive]);
-
+ 
   // Función para normalizar texto de manera más efectiva
   const normalizeText = (text: string) =>
     text
@@ -174,7 +182,7 @@ const captureAudioAndTranscribe = async () => {
       .replace(/[.,;:!?]/g, " ") // Elimina signos de puntuación
       .replace(/\s+/g, " ") // Reemplaza múltiples espacios por uno solo
       .trim();
-
+ 
   const updateOrder = (itemName: string, quantity: number, price: number) => {
     setOrders((prevOrders) => {
         let updated = false;
@@ -185,29 +193,29 @@ const captureAudioAndTranscribe = async () => {
             }
             return order;
         });
-
+ 
         if (!updated) {
             updatedOrders.push({ item: itemName, quantity, price });
         }
-
+ 
         console.log(`🛠 Pedido actualizado: ${itemName}, Cantidad: ${quantity}, Precio: ${price}`);
         return updatedOrders;
     });
 };
-
+ 
   // 📌 Detectar platos en el texto transcrito
   const detectOrdersInText = (text: string) => {
     if (!menuDataRef.current || !text) {
         console.warn("🚨 Menú vacío o texto sin contenido.");
         return;
     }
-
+ 
     console.log("🔍 Analizando texto para pedidos:", text);
     const normalizedText = normalizeText(text);
     console.log("✅ Texto normalizado:", normalizedText);
-
+ 
     const platosMap = new Map();
-
+ 
     // 📌 Crear un mapa dinámico de platos desde el menú
     menuDataRef.current.menu.forEach((category: any) => {
         category.platos.forEach((dish: any) => {
@@ -215,19 +223,19 @@ const captureAudioAndTranscribe = async () => {
             platosMap.set(normalizedName, dish);
         });
     });
-
+ 
     let found = false;
     let correctionMode = false;
     let possibleIncompleteRequest = false;
-
+ 
     // 📌 Detectar correcciones como "No, en realidad quiero..."
     if (/no |en realidad |me equivoqué/i.test(normalizedText)) {
         console.log("🔄 Corrección de pedido detectada.");
         correctionMode = true;
     }
-
+ 
     const detectedPlates = new Set(); // Para evitar duplicados
-
+ 
     for (const [dishName, dish] of platosMap.entries()) {
         if (
             normalizedText.includes(dishName) ||
@@ -237,30 +245,30 @@ const captureAudioAndTranscribe = async () => {
                 console.log(`⚠️ Plato "${dish.nombre}" ya detectado, evitando duplicado.`);
                 continue;
             }
-
+ 
             found = true;
             detectedPlates.add(dish.nombre);
-
+ 
             console.log(`✅ Plato detectado: ${dishName}`);
-
+ 
             let quantity = 1;
             const beforeText = normalizedText.substring(
                 Math.max(0, normalizedText.indexOf(dishName) - 50),
                 normalizedText.indexOf(dishName)
             );
-
+ 
             const numberMatch = beforeText.match(/(\d+)\s*$/);
             if (numberMatch) {
                 quantity = Number.parseInt(numberMatch[1], 10);
             }
-
+ 
             // 📌 Si la frase se corta ("quiero un chuletón de..."), esperar más información
             if (/\bde\b$/.test(normalizedText)) {
                 console.warn("⚠️ Pedido parece incompleto, esperando más información...");
                 possibleIncompleteRequest = true;
                 break;
             }
-
+ 
             if (correctionMode) {
                 console.log(
                     `🔄 Corrección detectada: Actualizando ${dish.nombre} a ${quantity}.`
@@ -274,19 +282,19 @@ const captureAudioAndTranscribe = async () => {
             }
         }
     }
-
+ 
     if (!found && !possibleIncompleteRequest) {
         console.warn("❌ No se detectó ningún plato en el texto.");
     }
 };
-
-
+ 
+ 
   const levenshtein = (a: string, b: string): number => {
     const tmp = Array(b.length + 1)
       .fill(0)
       .map((_, i) => i);
     let last, val;
-  
+ 
     for (let i = 0; i < a.length; i++) {
       last = i + 1;
       for (let j = 0; j < b.length; j++) {
@@ -294,16 +302,16 @@ const captureAudioAndTranscribe = async () => {
         tmp[j] = last = a[i] === b[j] ? val : Math.min(val, last, tmp[j + 1]) + 1;
       }
     }
-  
+ 
     return tmp[b.length];
   };
-
+ 
   // Configurar polling mejorado para capturar mensajes
   const setupPolling = () => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current)
     }
-
+ 
     // Usar un enfoque más agresivo para capturar mensajes
     pollingIntervalRef.current = setInterval(() => {
       try {
@@ -314,13 +322,12 @@ const captureAudioAndTranscribe = async () => {
             .filter((el) => el.textContent?.trim().length > 5) // Filtrar mensajes vacíos o muy cortos
             .map((el) => el.textContent?.trim())
             .filter(Boolean)
-
+ 
           // Procesar mensajes encontrados
           messages.forEach((msg) => {
             if (msg && msg.length > 5) {
               console.log("💬 Mensaje encontrado en iframe:", msg)
               detectOrdersInText(msg)
-              detectFormattedOrders(msg)
             }
           })
         }
@@ -328,66 +335,64 @@ const captureAudioAndTranscribe = async () => {
         // Error de CORS - normal, no hacer nada
       }
     }, 100) // Polling más frecuente
-
+ 
     return () => {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
       }
     }
   }
-
+ 
   // Procesamiento automático de mensajes cada 3 segundos
   const setupAutoProcessing = () => {
     if (autoProcessIntervalRef.current) {
       clearInterval(autoProcessIntervalRef.current)
     }
-
+ 
     autoProcessIntervalRef.current = setInterval(() => {
       // Procesar tanto el último mensaje del usuario como la respuesta del bot
       if (lastUserMessage) {
         console.log("Auto-procesando mensaje del usuario:", lastUserMessage)
         detectOrdersInText(lastUserMessage)
-        detectFormattedOrders(lastUserMessage)
       }
-
+ 
       if (lastBotMessage) {
         console.log("Auto-procesando respuesta del bot:", lastBotMessage)
         detectOrdersInText(lastBotMessage)
-        detectFormattedOrders(lastBotMessage)
       }
     }, 3000)
-
+ 
     return () => {
       if (autoProcessIntervalRef.current) {
         clearInterval(autoProcessIntervalRef.current)
       }
     }
   }
-
+ 
   const startSimliSession = async () => {
     try {
       console.log("Iniciando sesión en Simli...")
       setIsLoading(true)
       setMessageLog([])
-
+ 
       if (!process.env.NEXT_PUBLIC_SIMLI_API_KEY) {
         throw new Error("NEXT_PUBLIC_SIMLI_API_KEY no está definida")
       }
-
+ 
       // Cargar los datos del menú
       const restaurantData = await getRestaurantData()
       setMenuData(restaurantData)
       menuDataRef.current = restaurantData
       console.log("Datos del restaurante cargados:", restaurantData)
       setMessageLog((prev) => [...prev, "✅ Datos del restaurante cargados"])
-
+ 
       const restaurantPrompt = await getRestaurantPrompt()
       console.log("Prompt del restaurante generado correctamente")
-
+ 
       // Modificar el prompt para que el bot confirme explícitamente los pedidos
       const enhancedPrompt = `
 ${restaurantPrompt}
-
+ 
 INSTRUCCIÓN IMPORTANTE: Cuando un cliente pida un plato, SIEMPRE confirma el pedido explícitamente mencionando el nombre exacto del plato.
 Por ejemplo:
 - Si el cliente dice "Quiero una tabla de quesos", responde con "Perfecto, una tabla de quesos. ¿Algo más?"
@@ -402,10 +407,10 @@ Por ejemplo:
 - "El total de su pedido es 29.50€"
 - NUNCA digas "twenty-four euros" o "five point five euros"
 - SIEMPRE di "veinticuatro euros" o "cinco euros con cincuenta céntimos"
-
+ 
 Esto es CRÍTICO para el funcionamiento del sistema.
 `
-
+ 
       const response = await fetch("https://api.simli.ai/startE2ESession", {
         method: "POST",
         headers: {
@@ -421,32 +426,32 @@ Esto es CRÍTICO para el funcionamiento del sistema.
           maxIdleTime: 300,
         }),
       })
-
+ 
       if (!response.ok) {
         const errorText = await response.text()
         console.error("Error detallado de Simli:", errorText)
         throw new Error(`Error Simli API: ${errorText}`)
       }
-
+ 
       const data = await response.json()
       console.log("✅ Respuesta de Simli:", data)
       setMessageLog((prev) => [...prev, "✅ Sesión de Simli iniciada"])
-
+ 
       if (!data.roomUrl) {
         throw new Error("No se recibió una Room URL válida de Simli.")
       }
-
+ 
       // Mejorar la configuración del listener de mensajes
       if (!windowMessageListenerSetup) {
         // Función para procesar mensajes
         const processMessage = (text: string, source: string) => {
           console.log(`💬 Mensaje de ${source}:`, text)
           setMessageLog((prev) => [...prev, `${source}: ${text.substring(0, 50)}...`])
-
+ 
           // Procesar el mensaje para detectar pedidos
           detectOrdersInText(text)
-          detectFormattedOrders(text)
-
+ 
+ 
           // Actualizar el último mensaje según la fuente
           if (source === "Usuario") {
             setLastUserMessage(text)
@@ -454,7 +459,7 @@ Esto es CRÍTICO para el funcionamiento del sistema.
             setLastBotMessage(text)
           }
         }
-
+ 
         // Handler para mensajes de window
         const handleWindowMessage = (event: MessageEvent) => {
           try {
@@ -494,24 +499,24 @@ Esto es CRÍTICO para el funcionamiento del sistema.
             console.error("Error procesando mensaje:", e)
           }
         }
-
+ 
         // Añadir listener
         window.addEventListener("message", handleWindowMessage)
-
+ 
         // Limpiar al desmontar
         window.addEventListener("beforeunload", () => {
           window.removeEventListener("message", handleWindowMessage)
         })
         setWindowMessageListenerSetup(true)
       }
-
+ 
       setRoomUrl(data.roomUrl)
       setIsSessionActive(true)
       setIsLoading(false)
-
+ 
       // ✅ Iniciar la captura de audio para transcribir y conectar con la comanda
       captureAudioAndTranscribe();
-
+ 
       // Iniciar polling y procesamiento automático
       setupPolling()
       setupAutoProcessing()
@@ -522,20 +527,21 @@ Esto es CRÍTICO para el funcionamiento del sistema.
       setIsLoading(false)
     }
   }
-
+ 
 const endSimliSession = () => {
+  isRecordingActive.current = false;
   console.log("🔴 Finalizando sesión de Simli...");
-  
+ 
   //isRecordingActive = false; // 🔴 ⛔ Desactivar grabación para detener bucles
   setIsSessionActive(false);
   setRoomUrl(null);
-
+ 
   console.log("📋 Comanda finalizada:", orders);
   setOrders([]); // Resetear la comanda
-
+ 
   conversationHistoryRef.current = [];
   setMessageLog([]);
-
+ 
   // 🚨 🔴 Asegurar que se detiene la grabación paralela
   if (mediaRecorderRef.current) {
       if (mediaRecorderRef.current.state !== "inactive") {
@@ -544,28 +550,28 @@ const endSimliSession = () => {
       }
       mediaRecorderRef.current = null;
   }
-
+ 
   // 🚨 🔴 Detener y limpiar el stream de audio
   if (audioStreamRef.current) {
       console.log("🔇 Cerrando stream de audio...");
       audioStreamRef.current.getTracks().forEach(track => track.stop());
       audioStreamRef.current = null;
   }
-
+ 
   if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
   }
   if (autoProcessIntervalRef.current) {
       clearInterval(autoProcessIntervalRef.current);
   }
-
+ 
   console.log("✅ Sesión de Simli finalizada y grabación detenida.");
 };
-
+ 
   // Función para añadir pedidos directamente - mejorada con más logs
   const addOrderDirectly = (item: string, quantity = 1, price = 0) => {
     console.log(`🛒 Añadiendo pedido: ${item}, Cantidad: ${quantity}, Precio: ${price}`)
-
+ 
     // Buscar el precio si no se proporciona
     if (price === 0 && menuDataRef.current) {
       menuDataRef.current.menu.forEach((category: any) => {
@@ -576,11 +582,11 @@ const endSimliSession = () => {
         })
       })
     }
-
+ 
     setOrders((prevOrders) => {
       const updatedOrders = [...prevOrders]
       const existingOrderIndex = updatedOrders.findIndex((order) => order.item.toLowerCase() === item.toLowerCase())
-
+ 
       if (existingOrderIndex >= 0) {
         updatedOrders[existingOrderIndex] = {
           ...updatedOrders[existingOrderIndex],
@@ -591,12 +597,12 @@ const endSimliSession = () => {
         updatedOrders.push({ item, quantity, price })
         console.log("➕ Nuevo pedido añadido:", { item, quantity, price })
       }
-
+ 
       console.log("📋 Comanda final:", updatedOrders)
       return updatedOrders
     })
   }
-
+ 
   // Limpiar al desmontar
   useEffect(() => {
     return () => {
@@ -604,17 +610,17 @@ const endSimliSession = () => {
         audioRef.current.pause()
         URL.revokeObjectURL(audioRef.current.src)
       }
-
+ 
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
       }
-
+ 
       if (autoProcessIntervalRef.current) {
         clearInterval(autoProcessIntervalRef.current)
       }
     }
   }, []);
-
+ 
   return (
     <div className="w-full h-screen bg-white flex">
       {/* Área principal del avatar */}
@@ -642,7 +648,7 @@ const endSimliSession = () => {
             )}
           </div>
         )}
-  
+ 
         {/* Botón de control - Movido apenas más a la derecha */}
         {isSessionActive ? (
           <div className="fixed bottom-4 left-[60%] z-10"> {/* 🔄 Ajustado más a la derecha */}
@@ -664,7 +670,7 @@ const endSimliSession = () => {
           </div>
         )}
       </div>
-  
+ 
       {/* Panel de pedidos */}
       <div className="w-1/4 h-full border-l border-gray-200 flex flex-col">
         {isClient ? (
@@ -672,12 +678,12 @@ const endSimliSession = () => {
             <div className="h-[85%] flex flex-col"> {/* 🔼 Subimos un poco el contenido */}
               <OrderPanel orders={orders} clientId={clientId} />
             </div>
-  
+ 
             {/* Contenedor para QR y Logo - Alineados correctamente */}
             <div className="flex justify-between items-center px-4 py-4 border-t border-gray-200">
               {/* Código QR */}
               <img src="/menu_QR.jpg" alt="Código QR" className="w-40 h-40 object-contain" onError={(e) => console.error("❌ Error cargando QR:", e)} />
-  
+ 
               {/* Logo de la empresa - Más grande pero manteniendo proporción */}
               <img src="/1.jpg" alt="Logo Empresa" className="w-46 h-46 object-contain" />
             </div>
@@ -690,8 +696,8 @@ const endSimliSession = () => {
       </div>
     </div>
   )}
-    
-
+   
+ 
 export default SimliAvatar
 
 // //----------------------------------------------------------------
